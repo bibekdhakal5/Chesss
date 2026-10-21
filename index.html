@@ -60,7 +60,6 @@ button{cursor:pointer}button.primary{background:var(--accent);color:#052e24;bord
       <p class="muted" style="margin-bottom:5px">Principal variation</p>
       <div id="pv" class="line">Run an analysis to see the engine's suggested line.</div>
       <p class="note">This uses Stockfish.js lite (WebAssembly) in a browser worker. The engine calculations run locally. Keep the page open while it analyzes.</p>
-      <p class="note">If the engine does not start, open this page through GitHub Pages or a local web server rather than a file:// URL.</p>
     </section>
   </div>
 </main>
@@ -74,12 +73,6 @@ button{cursor:pointer}button.primary{background:var(--accent);color:#052e24;bord
   const glyphs = {wk:'♔',wq:'♕',wr:'♖',wb:'♗',wn:'♘',wp:'♙',bk:'♚',bq:'♛',br:'♜',bb:'♝',bn:'♞',bp:'♟'};
   let selected = null, targets = [], flipped = false, worker = null, engineReady = false, searching = false, lastMove = null;
   
-  // --- ENGINE PATHS ---
-  // We changed this to load from your local GitHub directory ("./")
-  // Ensure your files are named exactly like this in the repository!
-  const engineBase = './'; 
-  const engineUrl = './stockfish-19-lite-single.js'; 
-
   function squareName(file, rank){ return files[file] + rank; }
   function renderBoard(){
     boardEl.innerHTML = '';
@@ -121,19 +114,23 @@ button{cursor:pointer}button.primary{background:var(--accent);color:#052e24;bord
   function startEngine(){
     if(worker) return;
     try {
-      // This wrapper tells Stockfish where to find the .wasm file
-      const wrapper = `self.Module = { locateFile: function(path){ return ${JSON.stringify(engineBase)} + path; } }; importScripts(${JSON.stringify(engineUrl)});`;
-      const blob = new Blob([wrapper], {type:'text/javascript'});
-      worker = new Worker(URL.createObjectURL(blob));
+      // FIX: Direct Worker instantiation instead of Blob. 
+      // This is required for GitHub Pages and local servers to load the .wasm correctly.
+      worker = new Worker('./stockfish-19-lite-single.js');
+      
       worker.onmessage = e => handleEngine(String(e.data));
       worker.onerror = e => { 
           $('engineBadge').textContent='Engine failed to load'; 
-          $('gameStatus').textContent='Could not load Stockfish. Check internet and try GitHub Pages.'; 
+          $('gameStatus').textContent='Error: Make sure the file name is exactly correct.'; 
           console.error(e); 
       };
       worker.postMessage('uci');
       $('engineBadge').textContent='Loading engine…';
-    } catch(err){ $('engineBadge').textContent='Engine error'; $('gameStatus').textContent='Engine could not start: '+err.message; }
+    } catch(err){ 
+        $('engineBadge').textContent='Engine error'; 
+        $('gameStatus').textContent='Engine could not start: '+err.message; 
+        console.error(err);
+    }
   }
   
   function handleEngine(line){
