@@ -59,7 +59,8 @@ button{cursor:pointer}button.primary{background:var(--accent);color:#052e24;bord
       <div class="kv" style="margin-top:8px"><span class="muted">Best move</span><strong id="best">—</strong></div>
       <p class="muted" style="margin-bottom:5px">Principal variation</p>
       <div id="pv" class="line">Run an analysis to see the engine's suggested line.</div>
-      <p class="note">This uses Stockfish.js lite (WebAssembly) in a browser worker.</p>
+      <p class="note" id="engineError" style="color:#ef4444; font-weight:bold;"></p>
+      <p class="note">This uses Stockfish.js lite (WebAssembly) loaded from a CDN. The engine calculations run locally in your browser.</p>
     </section>
   </div>
 </main>
@@ -73,57 +74,78 @@ button{cursor:pointer}button.primary{background:var(--accent);color:#052e24;bord
   const glyphs = {wk:'♔',wq:'♕',wr:'♖',wb:'♗',wn:'♘',wp:'♙',bk:'♚',bq:'♛',br:'♜',bb:'♝',bn:'♞',bp:'♟'};
   let selected = null, targets = [], flipped = false, worker = null, searching = false, lastMove = null;
   
-  // --- ENGINE LOADING (Matches your working snippet) ---
-  function startEngine() {
-    worker = new Worker('./stockfish-19-lite-single.js');
-    
-    worker.onmessage = function(event) {
-      const line = String(event.data);
-      
-      // Update GUI based on engine output
-      if (line === 'uciok') {
-        $('engineBadge').textContent = 'Engine Ready';
-        $('analyzeBtn').disabled = false;
-      }
-      if (line.startsWith('info ')) {
-        const d = line.match(/\bdepth (\d+)/);
-        const score = line.match(/\bscore (cp|mate) (-?\d+)/);
-        const nps = line.match(/\bnps (\d+)/);
-        const pv = line.match(/\bpv (.+)/);
-        
-        if (d) $('depthNow').textContent = d[1];
-        if (nps) $('nps').textContent = Number(nps[1]).toLocaleString();
-        if (score) {
-          let val = score[1] === 'mate' ? 'Mate in ' + score[2] : (Number(score[2]) / 100).toFixed(2);
-          // Flip score if it's Black's turn
-          if (game.turn() === 'b' && score[1] === 'cp') val = (val * -1).toFixed(2);
-          $('eval').textContent = val;
-        }
-        if (pv) $('pv').textContent = pv[1].split(' ').slice(0, 12).join(' ');
-      }
-      if (line.startsWith('bestmove ')) {
-        searching = false;
-        $('analyzeBtn').disabled = false;
-        $('stopBtn').disabled = true;
-        const uci = line.split(/\s+/)[1];
-        if (uci && uci !== '(none)') {
-          // Convert UCI (e2e4) to SAN (e4)
-          const move = {from: uci.slice(0, 2), to: uci.slice(2, 4)};
-          if (uci.length > 4) move.promotion = uci[4];
-          const clone = new Chess(game.fen());
-          const m = clone.move(move);
-          $('best').textContent = m ? `${m.san} (${uci})` : uci;
-        } else {
-          $('best').textContent = 'No legal move';
-        }
-      }
-    };
+  // Use jsDelivr CDN which guarantees correct MIME types for .wasm
+  const engineUrl = 'https://cdn.jsdelivr.net/npm/stockfish@19.0.1/bin/stockfish-19-lite-single.js';
 
-    worker.postMessage('uci');
-    $('engineBadge').textContent = 'Loading engine...';
+  function startEngine() {
+    try {
+      worker = new Worker(engineUrl);
+      
+      worker.onmessage = function(event) {
+        const line = String(event.data);
+        
+        // Catch UCI OK
+        if (line === 'uciok') {
+          $('engineBadge').textContent = 'Engine Ready';
+          $('analyzeBtn').disabled = false;
+          $('engineError').textContent = ''; // Clear any previous errors
+        }
+
+        // Parse Evaluation, Depth, NPS, and PV
+        if (line.startsWith('info ')) {
+          const d = line.match(/\bdepth (\d+)/);
+          const score = line.match(/\bscore (cp|mate) (-?\d+)/);
+          const nps = line.match(/\bnps (\d+)/);
+          const pv = line.match(/\bpv (.+)/);
+          
+          if (d) $('depthNow').textContent = d[1];
+          if (nps) $('nps').textContent = Number(nps[1]).toLocaleString();
+          if (score) {
+            let val = score[1] === 'mate' ? 'Mate in ' + score[2] : (Number(score[2]) / 100).toFixed(2);
+            // Flip score if it's Black's turn
+            if (game.turn() === 'b' && score[1] === 'cp') val = (val * -1).toFixed(2);
+            $('eval').textContent = val;
+          }
+          if (pv) $('pv').textContent = pv[1].split(' ').slice(0, 12).join(' ');
+        }
+
+        // Catch Best Move
+        if (line.startsWith('bestmove ')) {
+          searching = false;
+          $('analyzeBtn').disabled = false;
+          $('stopBtn').disabled = true;
+          const uci = line.split(/\s+/)[1];
+          if (uci && uci !== '(none)') {
+            const move = {from: uci.slice(0, 2), to: uci.slice(2, 4)};
+            if (uci.length > 4) move.promotion = uci[4];
+            const clone = new Chess(game.fen());
+            const m = clone.move(move);
+            $('best').textContent = m ? `${m.san} (${uci})` : uci;
+          } else {
+            $('best').textContent = 'No legal move';
+          }
+        }
+      };
+
+      // Catch Engine Loading Errors
+      worker.onerror = function(err) {
+        console.error("Stockfish Worker Error:", err);
+        $('engineBadge').textContent = 'Engine Error';
+        $('engineError').textContent = 'Failed to load engine. Check console for details.';
+        $('gameStatus').textContent = 'Could not load Stockfish.';
+      };
+
+      // Start UCI handshake
+      worker.postMessage('uci');
+      $('engineBadge').textContent = 'Loading engine...';
+
+    } catch (err) {
+      console.error("Worker Construction Error:", err);
+      $('engineBadge').textContent = 'Engine Error';
+      $('engineError').textContent = 'Could not start worker: ' + err.message;
+    }
   }
 
-  // --- CHESS BOARD LOGIC ---
   function squareName(file, rank){ return files[file] + rank; }
   
   function renderBoard(){
@@ -183,7 +205,6 @@ button{cursor:pointer}button.primary{background:var(--accent);color:#052e24;bord
     stopAnalysis(false); clearAnalysis(); searching=true;
     $('analyzeBtn').disabled=true; $('stopBtn').disabled=false; $('gameStatus').textContent='Analyzing...';
     
-    // Send current board position to engine
     worker.postMessage('position fen ' + game.fen());
     worker.postMessage('go depth ' + $('depth').value);
   }
