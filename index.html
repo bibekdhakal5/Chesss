@@ -1,230 +1,855 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Local Stockfish Chess</title>
-<style>
-:root{color-scheme:dark;--bg:#111827;--panel:#1f2937;--text:#f3f4f6;--muted:#9ca3af;--accent:#34d399}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:16px system-ui,-apple-system,Segoe UI,sans-serif}
-main{max-width:900px;margin:auto;padding:18px}.top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
-h1{font-size:1.5rem;margin:0}.sub{color:var(--muted);margin:5px 0 18px}
-.layout{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(250px,.8fr);gap:16px;align-items:start}
-.panel{background:var(--panel);border:1px solid #374151;border-radius:16px;padding:14px}
-.board{display:grid;grid-template-columns:repeat(8,1fr);width:100%;aspect-ratio:1;border-radius:8px;overflow:hidden;touch-action:manipulation}
-.square{border:0;border-radius:0;display:flex;align-items:center;justify-content:center;aspect-ratio:1;padding:0;position:relative;font-size:clamp(24px,7vw,54px);line-height:1;cursor:pointer;color:#111827}
-.light{background:#ebecd0}.dark{background:#779556}.square.selected{box-shadow:inset 0 0 0 4px #facc15}.square.target:after{content:"";position:absolute;width:24%;height:24%;border-radius:50%;background:#26391d88}
-.square.last{background:#baca44}.piece{position:relative;z-index:1;text-shadow:0 1px 2px #0005}
-.controls{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
-button,select{font:inherit;border:1px solid #4b5563;border-radius:10px;padding:10px 12px;background:#374151;color:var(--text)}
-button{cursor:pointer}button.primary{background:var(--accent);color:#052e24;border-color:var(--accent);font-weight:700}button:disabled{opacity:.5;cursor:not-allowed}
-.status{font-size:.9rem;color:var(--muted);margin-top:10px;min-height:1.4em}
-.big{font-size:1.65rem;font-weight:750;margin:4px 0 12px}.muted{color:var(--muted)}.line{line-height:1.7;overflow-wrap:anywhere}.kv{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid #374151;padding:9px 0}
-.moves{max-height:180px;overflow:auto;line-height:1.8;font-variant-numeric:tabular-nums}
-.note{font-size:.86rem;color:var(--muted);line-height:1.5;margin-top:12px}
-@media(max-width:680px){main{padding:12px}.layout{grid-template-columns:1fr}.panel{padding:11px}.board{max-width:560px;margin:auto}.sub{margin-bottom:12px}}
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stockfish Analysis Board</title>
+
+  <!-- Chessboard.js CSS -->
+  <link rel="stylesheet"
+        href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css" />
+
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background: #1e1e2f;
+      color: #e0e0e0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+      min-height: 100vh;
+    }
+
+    h1 {
+      font-size: 1.6rem;
+      margin-bottom: 4px;
+      color: #f0c040;
+      letter-spacing: 1px;
+    }
+
+    .subtitle {
+      font-size: 0.85rem;
+      color: #888;
+      margin-bottom: 20px;
+    }
+
+    .main-container {
+      display: flex;
+      gap: 28px;
+      flex-wrap: wrap;
+      justify-content: center;
+      width: 100%;
+      max-width: 1100px;
+    }
+
+    /* ----- Board column ----- */
+    .board-section {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+
+    #myBoard {
+      width: 480px;
+      max-width: 90vw;
+    }
+
+    .eval-bar-container {
+      width: 100%;
+      height: 28px;
+      background: #333;
+      border-radius: 6px;
+      overflow: hidden;
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
+    .eval-bar-fill {
+      height: 100%;
+      width: 50%;
+      background: #f0f0f0;
+      transition: width 0.35s ease;
+      border-radius: 6px;
+    }
+
+    .eval-bar-label {
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: #111;
+      pointer-events: none;
+      text-shadow: 0 0 3px rgba(255,255,255,0.6);
+    }
+
+    /* ----- Sidebar ----- */
+    .sidebar {
+      width: 340px;
+      max-width: 90vw;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .panel {
+      background: #2a2a3d;
+      border-radius: 10px;
+      padding: 14px 16px;
+      border: 1px solid #3a3a50;
+    }
+
+    .panel h2 {
+      font-size: 0.95rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #f0c040;
+      margin-bottom: 10px;
+      border-bottom: 1px solid #3a3a50;
+      padding-bottom: 6px;
+    }
+
+    .status-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.85rem;
+      margin-bottom: 6px;
+      color: #aaa;
+    }
+
+    .status-row span:last-child {
+      color: #e0e0e0;
+      font-weight: 600;
+      text-align: right;
+      max-width: 60%;
+      word-break: break-word;
+    }
+
+    .best-move {
+      font-size: 1.3rem;
+      font-weight: 700;
+      color: #4caf50;
+      text-align: center;
+      padding: 6px 0;
+      min-height: 2.2rem;
+    }
+
+    .pv-line {
+      font-size: 0.8rem;
+      color: #bbb;
+      line-height: 1.4;
+      word-break: break-word;
+      max-height: 80px;
+      overflow-y: auto;
+      font-family: 'Courier New', monospace;
+    }
+
+    /* ----- Controls ----- */
+    .controls-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    button {
+      padding: 9px 12px;
+      border: none;
+      border-radius: 7px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.1s;
+      background: #3a3a55;
+      color: #e0e0e0;
+    }
+
+    button:hover {
+      background: #4a4a6a;
+    }
+
+    button:active {
+      transform: scale(0.97);
+    }
+
+    button.primary {
+      background: #f0c040;
+      color: #1e1e2f;
+    }
+
+    button.primary:hover {
+      background: #ffd860;
+    }
+
+    button.danger {
+      background: #c0392b;
+      color: #fff;
+    }
+
+    button.danger:hover {
+      background: #e74c3c;
+    }
+
+    button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .depth-control {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.85rem;
+      color: #aaa;
+    }
+
+    .depth-control input[type="range"] {
+      flex: 1;
+      accent-color: #f0c040;
+    }
+
+    /* ----- Move history ----- */
+    .move-list {
+      max-height: 160px;
+      overflow-y: auto;
+      font-size: 0.82rem;
+      line-height: 1.7;
+      font-family: 'Courier New', monospace;
+      color: #ccc;
+    }
+
+    .move-list .move-number {
+      color: #777;
+      margin-right: 4px;
+    }
+
+    .move-list .white-move {
+      color: #fff;
+      font-weight: 600;
+    }
+
+    .move-list .black-move {
+      color: #f0c040;
+      font-weight: 600;
+    }
+
+    /* ----- FEN / PGN inputs ----- */
+    .fen-input,
+    .pgn-input {
+      width: 100%;
+      padding: 8px 10px;
+      background: #1e1e2f;
+      border: 1px solid #3a3a50;
+      border-radius: 6px;
+      color: #e0e0e0;
+      font-family: 'Courier New', monospace;
+      font-size: 0.75rem;
+      resize: vertical;
+    }
+
+    .fen-input:focus,
+    .pgn-input:focus {
+      outline: none;
+      border-color: #f0c040;
+    }
+
+    .input-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .input-row button {
+      flex: 1;
+    }
+
+    /* ----- Responsive ----- */
+    @media (max-width: 880px) {
+      .main-container {
+        flex-direction: column;
+        align-items: center;
+      }
+      .sidebar {
+        width: 480px;
+        max-width: 90vw;
+      }
+    }
+
+    /* ----- Loading indicator ----- */
+    .engine-status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.8rem;
+      color: #888;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #555;
+      display: inline-block;
+    }
+
+    .dot.ready {
+      background: #4caf50;
+      box-shadow: 0 0 6px #4caf50;
+    }
+
+    .dot.thinking {
+      background: #f0c040;
+      animation: pulse 0.8s infinite alternate;
+    }
+
+    @keyframes pulse {
+      from { opacity: 1; }
+      to   { opacity: 0.3; }
+    }
+  </style>
 </head>
 <body>
-<main>
-  <div class="top"><h1>♟ Local Stockfish Chess</h1><span id="engineBadge" class="muted">Engine not loaded</span></div>
-  <p class="sub">Play moves on the board, then analyze the position on your device.</p>
-  <div class="layout">
-    <section class="panel">
-      <div id="board" class="board" aria-label="Chessboard"></div>
-      <div class="controls">
-        <button id="undoBtn">↶ Undo</button><button id="resetBtn">New game</button>
-        <button id="flipBtn">Flip board</button>
+
+  <h1>♟ Stockfish Analysis Board</h1>
+  <p class="subtitle">Powered by Stockfish 19 Lite (WASM) &middot; Drag pieces to play</p>
+
+  <div class="main-container">
+
+    <!-- ============ BOARD COLUMN ============ -->
+    <div class="board-section">
+      <div id="myBoard"></div>
+
+      <!-- Evaluation bar -->
+      <div class="eval-bar-container">
+        <div class="eval-bar-fill" id="evalBarFill"></div>
+        <span class="eval-bar-label" id="evalBarLabel">0.00</span>
       </div>
-      <div id="gameStatus" class="status">Tap a piece, then tap its destination square.</div>
-      <div class="muted" style="margin-top:8px;font-size:.85rem">Moves</div>
-      <div id="moves" class="moves">No moves yet.</div>
-    </section>
-    <section class="panel">
-      <h2 style="margin:0 0 10px;font-size:1.15rem">Engine analysis</h2>
-      <div class="kv"><span class="muted">Evaluation</span><strong id="eval">—</strong></div>
-      <div class="kv"><span class="muted">Depth</span><strong id="depthNow">—</strong></div>
-      <div class="kv"><span class="muted">Nodes / second</span><strong id="nps">—</strong></div>
-      <div style="margin-top:14px">
-        <label for="depth">Search depth</label><br>
-        <select id="depth" style="margin-top:7px;width:100%">
-          <option value="8">8 — quick</option><option value="10" selected>10 — balanced</option>
-          <option value="12">12 — deeper</option><option value="15">15 — slower</option>
-        </select>
+
+      <!-- Board controls -->
+      <div class="controls-grid" style="width:100%;">
+        <button class="primary" id="btnAnalyze">🔍 Analyze</button>
+        <button id="btnHint">💡 Best Move</button>
+        <button id="btnFlip">🔄 Flip Board</button>
+        <button class="danger" id="btnReset">♻ New Game</button>
       </div>
-      <div class="controls">
-        <button id="analyzeBtn" class="primary" disabled>Analyze position</button>
-        <button id="stopBtn" disabled>Stop</button>
+    </div>
+
+    <!-- ============ SIDEBAR ============ -->
+    <div class="sidebar">
+
+      <!-- Engine analysis panel -->
+      <div class="panel">
+        <h2>Engine Analysis</h2>
+        <div class="engine-status" style="margin-bottom:8px;">
+          <span class="dot" id="engineDot"></span>
+          <span id="engineStatusText">Initializing engine…</span>
+        </div>
+        <div class="best-move" id="bestMoveDisplay">—</div>
+        <div class="status-row">
+          <span>Evaluation</span>
+          <span id="evalDisplay">0.00</span>
+        </div>
+        <div class="status-row">
+          <span>Depth</span>
+          <span id="depthDisplay">—</span>
+        </div>
+        <div class="status-row">
+          <span>Nodes</span>
+          <span id="nodesDisplay">—</span>
+        </div>
+        <div class="pv-line" id="pvDisplay">Principal variation will appear here…</div>
+        <div class="depth-control" style="margin-top:10px;">
+          <label for="depthSlider">Depth</label>
+          <input type="range" id="depthSlider" min="5" max="22" value="12" step="1">
+          <span id="depthValue" style="min-width:24px;text-align:right;">12</span>
+        </div>
       </div>
-      <div class="kv" style="margin-top:8px"><span class="muted">Best move</span><strong id="best">—</strong></div>
-      <p class="muted" style="margin-bottom:5px">Principal variation</p>
-      <div id="pv" class="line">Run an analysis to see the engine's suggested line.</div>
-      <p class="note" id="engineError" style="color:#ef4444; font-weight:bold;"></p>
-      <p class="note">This uses Stockfish.js lite (WebAssembly) loaded from a CDN. The engine calculations run locally in your browser.</p>
-    </section>
+
+      <!-- Move history -->
+      <div class="panel">
+        <h2>Move History</h2>
+        <div class="move-list" id="moveList">No moves yet.</div>
+      </div>
+
+      <!-- FEN import -->
+      <div class="panel">
+        <h2>FEN</h2>
+        <textarea class="fen-input" id="fenInput" rows="2" spellcheck="false"
+          placeholder="Paste a FEN string…"></textarea>
+        <div class="input-row">
+          <button id="btnLoadFen">Load FEN</button>
+          <button id="btnCopyFen">Copy FEN</button>
+        </div>
+      </div>
+
+      <!-- PGN import -->
+      <div class="panel">
+        <h2>PGN</h2>
+        <textarea class="pgn-input" id="pgnInput" rows="4" spellcheck="false"
+          placeholder="Paste PGN here…"></textarea>
+        <div class="input-row">
+          <button id="btnLoadPgn">Load PGN</button>
+          <button id="btnCopyPgn">Copy PGN</button>
+        </div>
+      </div>
+
+    </div>
   </div>
-</main>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
-<script>
-(() => {
-  const $ = id => document.getElementById(id);
-  const game = new Chess();
-  const boardEl = $('board');
-  const files = 'abcdefgh';
-  const glyphs = {wk:'♔',wq:'♕',wr:'♖',wb:'♗',wn:'♘',wp:'♙',bk:'♚',bq:'♛',br:'♜',bb:'♝',bn:'♞',bp:'♟'};
-  let selected = null, targets = [], flipped = false, worker = null, searching = false, lastMove = null;
-  
-  // Use jsDelivr CDN which guarantees correct MIME types for .wasm
-  const engineUrl = 'https://cdn.jsdelivr.net/npm/stockfish@19.0.1/bin/stockfish-19-lite-single.js';
 
-  function startEngine() {
-    try {
-      worker = new Worker(engineUrl);
-      
-      worker.onmessage = function(event) {
-        const line = String(event.data);
-        
-        // Catch UCI OK
-        if (line === 'uciok') {
-          $('engineBadge').textContent = 'Engine Ready';
-          $('analyzeBtn').disabled = false;
-          $('engineError').textContent = ''; // Clear any previous errors
-        }
+  <!-- ==================== SCRIPTS ==================== -->
+  <!-- jQuery (required by chessboard.js) -->
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 
-        // Parse Evaluation, Depth, NPS, and PV
-        if (line.startsWith('info ')) {
-          const d = line.match(/\bdepth (\d+)/);
-          const score = line.match(/\bscore (cp|mate) (-?\d+)/);
-          const nps = line.match(/\bnps (\d+)/);
-          const pv = line.match(/\bpv (.+)/);
-          
-          if (d) $('depthNow').textContent = d[1];
-          if (nps) $('nps').textContent = Number(nps[1]).toLocaleString();
-          if (score) {
-            let val = score[1] === 'mate' ? 'Mate in ' + score[2] : (Number(score[2]) / 100).toFixed(2);
-            // Flip score if it's Black's turn
-            if (game.turn() === 'b' && score[1] === 'cp') val = (val * -1).toFixed(2);
-            $('eval').textContent = val;
-          }
-          if (pv) $('pv').textContent = pv[1].split(' ').slice(0, 12).join(' ');
-        }
+  <!-- chessboard.js -->
+  <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
 
-        // Catch Best Move
-        if (line.startsWith('bestmove ')) {
-          searching = false;
-          $('analyzeBtn').disabled = false;
-          $('stopBtn').disabled = true;
-          const uci = line.split(/\s+/)[1];
-          if (uci && uci !== '(none)') {
-            const move = {from: uci.slice(0, 2), to: uci.slice(2, 4)};
-            if (uci.length > 4) move.promotion = uci[4];
-            const clone = new Chess(game.fen());
-            const m = clone.move(move);
-            $('best').textContent = m ? `${m.san} (${uci})` : uci;
-          } else {
-            $('best').textContent = 'No legal move';
-          }
-        }
-      };
+  <!-- chess.js (move generation / validation / FEN / PGN) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.13.4/chess.min.js"></script>
 
-      // Catch Engine Loading Errors
-      worker.onerror = function(err) {
-        console.error("Stockfish Worker Error:", err);
-        $('engineBadge').textContent = 'Engine Error';
-        $('engineError').textContent = 'Failed to load engine. Check console for details.';
-        $('gameStatus').textContent = 'Could not load Stockfish.';
-      };
+  <!-- Stockfish 19 Lite (single-threaded WASM – no CORS headers needed) -->
+  <script>
+    // We'll load the engine as a Web Worker after the page is ready.
+    // Using the "lite single-threaded" build from nmrugg/stockfish.js
+    // via jsDelivr CDN.  This is ~1.7 MB and runs everywhere without
+    // special COOP/COEP headers.
+  </script>
 
-      // Start UCI handshake
-      worker.postMessage('uci');
-      $('engineBadge').textContent = 'Loading engine...';
+  <script>
+    /* ============================================================
+       GLOBAL STATE
+       ============================================================ */
+    let board = null;                 // chessboard.js instance
+    let game = new Chess();           // chess.js game instance
+    let stockfishWorker = null;       // Web Worker running Stockfish
+    let engineReady = false;          // UCI handshake completed
+    let isThinking = false;           // engine currently analyzing
+    let analysisDepth = 12;           // default depth
+    let currentBestMove = null;       // UCI move string (e.g. "e2e4")
+    let lastEval = null;              // numeric evaluation (centipawns or mate)
+    let lastEvalType = 'cp';          // 'cp' or 'mate'
+    let pendingAnalysis = false;      // analysis requested but engine busy
 
-    } catch (err) {
-      console.error("Worker Construction Error:", err);
-      $('engineBadge').textContent = 'Engine Error';
-      $('engineError').textContent = 'Could not start worker: ' + err.message;
+    const $board = $('#myBoard');
+    const $moveList = $('#moveList');
+    const $bestMoveDisplay = $('#bestMoveDisplay');
+    const $evalDisplay = $('#evalDisplay');
+    const $depthDisplay = $('#depthDisplay');
+    const $nodesDisplay = $('#nodesDisplay');
+    const $pvDisplay = $('#pvDisplay');
+    const $evalBarFill = $('#evalBarFill');
+    const $evalBarLabel = $('#evalBarLabel');
+    const $engineDot = $('#engineDot');
+    const $engineStatusText = $('#engineStatusText');
+    const $depthSlider = $('#depthSlider');
+    const $depthValue = $('#depthValue');
+    const $fenInput = $('#fenInput');
+    const $pgnInput = $('#pgnInput');
+
+    /* ============================================================
+       INITIALISE BOARD
+       ============================================================ */
+    function initBoard() {
+      board = Chessboard('myBoard', {
+        draggable: true,
+        position: 'start',
+        onDragStart: onDragStart,
+        onDrop: onDrop,
+        onSnapEnd: onSnapEnd,
+        pieceTheme: 'https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/img/chesspieces/wikipedia/{piece}.png'
+      });
+      window.addEventListener('resize', () => board.resize());
     }
-  }
 
-  function squareName(file, rank){ return files[file] + rank; }
-  
-  function renderBoard(){
-    boardEl.innerHTML = '';
-    const rows = flipped ? [1,2,3,4,5,6,7,8] : [8,7,6,5,4,3,2,1];
-    const cols = flipped ? [7,6,5,4,3,2,1,0] : [0,1,2,3,4,5,6,7];
-    
-    for(const rank of rows) for(const file of cols){
-      const sq = squareName(file,rank), piece = game.get(sq);
-      const b = document.createElement('button');
-      b.className = 'square ' + ((file + rank) % 2 ? 'dark':'light');
-      if(selected===sq) b.classList.add('selected');
-      if(targets.includes(sq)) b.classList.add('target');
-      if(lastMove && (lastMove.from===sq || lastMove.to===sq)) b.classList.add('last');
-      
-      if(piece){ 
-        const span=document.createElement('span'); 
-        span.className='piece'; 
-        span.textContent=glyphs[piece.color+piece.type]; 
-        span.style.color=piece.color==='w'?'#fff':'#161616'; 
-        span.style.webkitTextStroke=piece.color==='w'?'1px #333':'0'; 
-        b.appendChild(span); 
+    /* ============================================================
+       BOARD CALLBACKS
+       ============================================================ */
+    function onDragStart(source, piece) {
+      // Do not allow moves if the game is over or engine is thinking
+      if (game.game_over() || isThinking) return false;
+
+      // Only allow the side whose turn it is to move
+      if (game.turn() === 'w' && piece.search(/^b/) !== -1) return false;
+      if (game.turn() === 'b' && piece.search(/^w/) !== -1) return false;
+
+      return true;
+    }
+
+    function onDrop(source, target) {
+      // See if the move is legal
+      const move = game.move({
+        from: source,
+        to: target,
+        promotion: 'q' // Always promote to a queen for simplicity
+      });
+
+      // Illegal move – snap piece back
+      if (move === null) return 'snapback';
+
+      // Update the move history and trigger analysis
+      updateMoveHistory();
+      clearAnalysisDisplay();
+      requestAnalysis();
+    }
+
+    function onSnapEnd() {
+      board.position(game.fen());
+    }
+
+    /* ============================================================
+       MOVE HISTORY
+       ============================================================ */
+    function updateMoveHistory() {
+      const history = game.history({ verbose: true });
+      if (history.length === 0) {
+        $moveList.html('No moves yet.');
+        return;
       }
-      
-      b.addEventListener('click',()=>onSquare(sq));
-      boardEl.appendChild(b);
+
+      let html = '';
+      for (let i = 0; i < history.length; i += 2) {
+        const moveNumber = Math.floor(i / 2) + 1;
+        const whiteMove = history[i];
+        const blackMove = history[i + 1];
+
+        html += `<span class="move-number">${moveNumber}.</span>`;
+        html += `<span class="white-move">${whiteMove.san}</span>`;
+        if (blackMove) {
+          html += ` <span class="black-move">${blackMove.san}</span>`;
+        }
+        html += '<br>';
+      }
+      $moveList.html(html);
+      // Scroll to bottom
+      $moveList.scrollTop($moveList[0].scrollHeight);
     }
-    
-    const hist = game.history({verbose:true});
-    $('moves').textContent = hist.length ? hist.reduce((s,m,i)=>s+(i%2===0?`${Math.floor(i/2)+1}. `:'')+m.san+' ', '') : 'No moves yet.';
-    $('gameStatus').textContent = game.isCheckmate() ? `Checkmate — ${game.turn()==='w'?'Black':'White'} wins.` :
-      game.isDraw() ? 'Draw position.' : game.in_check() ? `${game.turn()==='w'?'White':'Black'} to move — check!` :
-      `${game.turn()==='w'?'White':'Black'} to move.`;
-    $('undoBtn').disabled = !hist.length;
-  }
-  
-  function onSquare(sq){
-    if(searching) stopAnalysis();
-    const p = game.get(sq);
-    if(selected && targets.includes(sq)){
-      let move = game.move({from:selected,to:sq,promotion:'q'});
-      if(move){lastMove={from:move.from,to:move.to};selected=null;targets=[];clearAnalysis();renderBoard();return;}
+
+    /* ============================================================
+       STOCKFISH ENGINE
+       ============================================================ */
+    function initEngine() {
+      // Path to the lite single-threaded Stockfish 19 build
+      const engineJs = 'https://cdn.jsdelivr.net/npm/stockfish@19.0.0/src/stockfish-19-lite-single.js';
+
+      try {
+        stockfishWorker = new Worker(engineJs);
+      } catch (e) {
+        // Fallback: try the older stockfish.js CDN
+        try {
+          stockfishWorker = new Worker('https://cdn.jsdelivr.net/npm/stockfish@16.0.0/src/stockfish.js');
+        } catch (e2) {
+          setEngineStatus('error', 'Failed to load engine');
+          return;
+        }
+      }
+
+      stockfishWorker.onmessage = handleEngineMessage;
+
+      // UCI handshake
+      sendCommand('uci');
     }
-    if(p && p.color===game.turn()){
-      selected=sq;targets=game.moves({square:sq, verbose:true}).map(m=>m.to);
-    } else {selected=null;targets=[];}
-    renderBoard();
-  }
-  
-  function clearAnalysis(){ 
-    $('eval').textContent='—'; $('depthNow').textContent='—'; $('nps').textContent='—'; $('best').textContent='—'; 
-    $('pv').textContent="Run an analysis to see the engine's suggested line."; 
-  }
-  
-  function analyze(){
-    if(!worker || game.game_over()) return;
-    stopAnalysis(false); clearAnalysis(); searching=true;
-    $('analyzeBtn').disabled=true; $('stopBtn').disabled=false; $('gameStatus').textContent='Analyzing...';
-    
-    worker.postMessage('position fen ' + game.fen());
-    worker.postMessage('go depth ' + $('depth').value);
-  }
-  
-  function stopAnalysis(send=true){
-    if(worker && searching && send) worker.postMessage('stop');
-    searching=false; 
-    $('analyzeBtn').disabled=false; 
-    $('stopBtn').disabled=true;
-  }
-  
-  $('analyzeBtn').addEventListener('click',analyze);
-  $('stopBtn').addEventListener('click',()=>stopAnalysis());
-  $('undoBtn').addEventListener('click',()=>{if(game.undo()){lastMove=null;selected=null;targets=[];clearAnalysis();renderBoard();}});
-  $('resetBtn').addEventListener('click',()=>{game.reset();lastMove=null;selected=null;targets=[];clearAnalysis();renderBoard();});
-  $('flipBtn').addEventListener('click',()=>{flipped=!flipped;renderBoard();});
-  
-  renderBoard();
-  startEngine();
-})();
-</script>
+
+    function sendCommand(cmd) {
+      if (stockfishWorker) {
+        stockfishWorker.postMessage(cmd);
+      }
+    }
+
+    function handleEngineMessage(event) {
+      const line = event.data;
+      if (typeof line !== 'string') return;
+
+      // ---- UCI handshake ----
+      if (line === 'uciok') {
+        sendCommand('isready');
+        return;
+      }
+      if (line === 'readyok') {
+        engineReady = true;
+        setEngineStatus('ready', 'Engine ready');
+        return;
+      }
+
+      // ---- Analysis info lines ----
+      if (line.startsWith('info depth')) {
+        parseInfoLine(line);
+      }
+
+      // ---- Best move ----
+      if (line.startsWith('bestmove')) {
+        const parts = line.split(' ');
+        const move = parts[1];
+        if (move && move !== '(none)') {
+          currentBestMove = move;
+          displayBestMove(move);
+        }
+        isThinking = false;
+        setEngineStatus('ready', 'Engine ready');
+        // If another analysis was requested while we were thinking, run it
+        if (pendingAnalysis) {
+          pendingAnalysis = false;
+          requestAnalysis();
+        }
+      }
+    }
+
+    /* ------------------------------------------------------------
+       Parse UCI "info" lines to extract eval, depth, nodes, PV
+       ------------------------------------------------------------ */
+    function parseInfoLine(line) {
+      // Depth
+      const depthMatch = line.match(/depth (\d+)/);
+      if (depthMatch) {
+        $depthDisplay.text(depthMatch[1]);
+      }
+
+      // Nodes
+      const nodesMatch = line.match(/nodes (\d+)/);
+      if (nodesMatch) {
+        const n = parseInt(nodesMatch[1], 10);
+        $nodesDisplay.text(n.toLocaleString());
+      }
+
+      // Score (cp or mate)
+      const cpMatch = line.match(/score cp (-?\d+)/);
+      const mateMatch = line.match(/score mate (-?\d+)/);
+      if (cpMatch) {
+        const cp = parseInt(cpMatch[1], 10);
+        lastEval = cp;
+        lastEvalType = 'cp';
+        updateEvalDisplay(cp, 'cp');
+      } else if (mateMatch) {
+        const mateIn = parseInt(mateMatch[1], 10);
+        lastEval = mateIn;
+        lastEvalType = 'mate';
+        updateEvalDisplay(mateIn, 'mate');
+      }
+
+      // Principal variation
+      const pvMatch = line.match(/ pv (.+)/);
+      if (pvMatch) {
+        const pv = pvMatch[1].trim();
+        $pvDisplay.text(pv);
+      }
+    }
+
+    /* ------------------------------------------------------------
+       Display helpers
+       ------------------------------------------------------------ */
+    function updateEvalDisplay(value, type) {
+      if (type === 'mate') {
+        const label = value > 0 ? `M${value}` : `M${Math.abs(value)}`;
+        $evalDisplay.text(label);
+        // Mate in N for white → bar full white; mate for black → full black
+        const pct = value > 0 ? 100 : 0;
+        $evalBarFill.css('width', pct + '%');
+        $evalBarLabel.text(label);
+      } else {
+        // Centipawns: convert to pawn units
+        const pawns = (value / 100).toFixed(2);
+        $evalDisplay.text(pawns);
+        // Map evaluation to bar width (sigmoid-ish)
+        // Clamp between -8 and +8 pawns for visual purposes
+        const clamped = Math.max(-800, Math.min(800, value));
+        const pct = 50 + (clamped / 800) * 50; // 0–100
+        $evalBarFill.css('width', pct + '%');
+        $evalBarLabel.text(pawns);
+      }
+    }
+
+    function displayBestMove(uciMove) {
+      // Convert UCI move (e2e4) to SAN for readability
+      const tempGame = new Chess(game.fen());
+      try {
+        const from = uciMove.substring(0, 2);
+        const to = uciMove.substring(2, 4);
+        const promotion = uciMove.length > 4 ? uciMove[4] : undefined;
+        const move = tempGame.move({ from, to, promotion });
+        if (move) {
+          $bestMoveDisplay.text(move.san);
+        } else {
+          $bestMoveDisplay.text(uciMove);
+        }
+      } catch (e) {
+        $bestMoveDisplay.text(uciMove);
+      }
+    }
+
+    function clearAnalysisDisplay() {
+      $bestMoveDisplay.text('—');
+      $pvDisplay.text('Analyzing…');
+      $depthDisplay.text('—');
+      $nodesDisplay.text('—');
+    }
+
+    function setEngineStatus(state, text) {
+      $engineDot.removeClass('ready thinking');
+      if (state === 'ready') $engineDot.addClass('ready');
+      if (state === 'thinking') $engineDot.addClass('thinking');
+      $engineStatusText.text(text);
+    }
+
+    /* ============================================================
+       ANALYSIS REQUEST
+       ============================================================ */
+    function requestAnalysis() {
+      if (!engineReady) {
+        pendingAnalysis = true;
+        return;
+      }
+      if (isThinking) {
+        pendingAnalysis = true;
+        return;
+      }
+
+      isThinking = true;
+      pendingAnalysis = false;
+      setEngineStatus('thinking', 'Analyzing…');
+      clearAnalysisDisplay();
+
+      // Stop any previous search, set new position, and go
+      sendCommand('stop');
+      // Small delay to let the engine settle before sending new position
+      setTimeout(() => {
+        sendCommand('position fen ' + game.fen());
+        sendCommand('go depth ' + analysisDepth);
+      }, 30);
+    }
+
+    /* ============================================================
+       BOARD CONTROLS
+       ============================================================ */
+    function resetGame() {
+      game = new Chess();
+      board.position('start');
+      $moveList.html('No moves yet.');
+      clearAnalysisDisplay();
+      currentBestMove = null;
+      lastEval = null;
+      $evalBarFill.css('width', '50%');
+      $evalBarLabel.text('0.00');
+      $evalDisplay.text('0.00');
+      $fenInput.val('');
+      $pgnInput.val('');
+      // Optionally analyze the starting position
+      requestAnalysis();
+    }
+
+    function flipBoard() {
+      board.flip();
+    }
+
+    function showHint() {
+      if (currentBestMove) {
+        // Highlight the best move on the board
+        const from = currentBestMove.substring(0, 2);
+        const to = currentBestMove.substring(2, 4);
+        $board.find('.square-' + from).addClass('highlight-hint');
+        $board.find('.square-' + to).addClass('highlight-hint');
+        setTimeout(() => {
+          $board.find('.square-' + from).removeClass('highlight-hint');
+          $board.find('.square-' + to).removeClass('highlight-hint');
+        }, 3000);
+      } else {
+        // If no best move yet, run analysis first
+        requestAnalysis();
+      }
+    }
+
+    /* ============================================================
+       FEN / PGN IMPORT & EXPORT
+       ============================================================ */
+    function loadFen() {
+      const fen = $fenInput.val().trim();
+      if (!fen) return;
+      const newGame = new Chess();
+      try {
+        newGame.load(fen);
+        game = newGame;
+        board.position(game.fen());
+        updateMoveHistory();
+        clearAnalysisDisplay();
+        requestAnalysis();
+      } catch (e) {
+        alert('Invalid FEN string.');
+      }
+    }
+
+    function copyFen() {
+      const fen = game.fen();
+      navigator.clipboard.writeText(fen).then(() => {
+        $fenInput.val(fen);
+      });
+    }
+
+    function loadPgn() {
+      const pgn = $pgnInput.val().trim();
+      if (!pgn) return;
+      const newGame = new Chess();
+      try {
+        newGame.load_pgn(pgn);
+        game = newGame;
+        board.position(game.fen());
+        updateMoveHistory();
+        clearAnalysisDisplay();
+        requestAnalysis();
+      } catch (e) {
+        alert('Invalid PGN.');
+      }
+    }
+
+    function copyPgn() {
+      const pgn = game.pgn();
+      navigator.clipboard.writeText(pgn).then(() => {
+        $pgnInput.val(pgn);
+      });
+    }
+
+    /* ============================================================
+       EVENT BINDINGS
+       ============================================================ */
+    $(document).ready(function () {
+      initBoard();
+      initEngine();
+
+      // Board controls
+      $('#btnAnalyze').on('click', requestAnalysis);
+      $('#btnHint').on('click', showHint);
+      $('#btnFlip').on('click', flipBoard);
+      $('#btnReset').on('click', resetGame);
+
+      // Depth slider
+      $depthSlider.on('input', function () {
+        analysisDepth = parseInt($(this).val(), 10);
+        $depthValue.text(analysisDepth);
+      });
+
+      // FEN / PGN
+      $('#btnLoadFen').on('click', loadFen);
+      $('#btnCopyFen').on('click', copyFen);
+      $('#btnLoadPgn').on('click', loadPgn);
+      $('#btnCopyPgn').on('click', copyPgn);
+
+      // Add highlight style for hint
+      $('<style>')
+        .prop('type', 'text/css')
+        .html(`
+          .highlight-hint {
+            box-shadow: inset 0 0 3px 3px #4caf50 !important;
+            transition: box-shadow 0.2s;
+          }
+        `)
+        .appendTo('head');
+    });
+  </script>
+
 </body>
 </html>
