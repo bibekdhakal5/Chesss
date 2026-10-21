@@ -59,7 +59,7 @@ button{cursor:pointer}button.primary{background:var(--accent);color:#052e24;bord
       <div class="kv" style="margin-top:8px"><span class="muted">Best move</span><strong id="best">—</strong></div>
       <p class="muted" style="margin-bottom:5px">Principal variation</p>
       <div id="pv" class="line">Run an analysis to see the engine's suggested line.</div>
-      <p class="note">This uses Stockfish.js lite (WebAssembly) in a browser worker. The engine calculations run locally. Keep the page open while it analyzes.</p>
+      <p class="note">This uses Stockfish.js lite (WebAssembly) in a browser worker.</p>
     </section>
   </div>
 </main>
@@ -71,13 +71,66 @@ button{cursor:pointer}button.primary{background:var(--accent);color:#052e24;bord
   const boardEl = $('board');
   const files = 'abcdefgh';
   const glyphs = {wk:'♔',wq:'♕',wr:'♖',wb:'♗',wn:'♘',wp:'♙',bk:'♚',bq:'♛',br:'♜',bb:'♝',bn:'♞',bp:'♟'};
-  let selected = null, targets = [], flipped = false, worker = null, engineReady = false, searching = false, lastMove = null;
+  let selected = null, targets = [], flipped = false, worker = null, searching = false, lastMove = null;
   
+  // --- ENGINE LOADING (Matches your working snippet) ---
+  function startEngine() {
+    worker = new Worker('./stockfish-19-lite-single.js');
+    
+    worker.onmessage = function(event) {
+      const line = String(event.data);
+      
+      // Update GUI based on engine output
+      if (line === 'uciok') {
+        $('engineBadge').textContent = 'Engine Ready';
+        $('analyzeBtn').disabled = false;
+      }
+      if (line.startsWith('info ')) {
+        const d = line.match(/\bdepth (\d+)/);
+        const score = line.match(/\bscore (cp|mate) (-?\d+)/);
+        const nps = line.match(/\bnps (\d+)/);
+        const pv = line.match(/\bpv (.+)/);
+        
+        if (d) $('depthNow').textContent = d[1];
+        if (nps) $('nps').textContent = Number(nps[1]).toLocaleString();
+        if (score) {
+          let val = score[1] === 'mate' ? 'Mate in ' + score[2] : (Number(score[2]) / 100).toFixed(2);
+          // Flip score if it's Black's turn
+          if (game.turn() === 'b' && score[1] === 'cp') val = (val * -1).toFixed(2);
+          $('eval').textContent = val;
+        }
+        if (pv) $('pv').textContent = pv[1].split(' ').slice(0, 12).join(' ');
+      }
+      if (line.startsWith('bestmove ')) {
+        searching = false;
+        $('analyzeBtn').disabled = false;
+        $('stopBtn').disabled = true;
+        const uci = line.split(/\s+/)[1];
+        if (uci && uci !== '(none)') {
+          // Convert UCI (e2e4) to SAN (e4)
+          const move = {from: uci.slice(0, 2), to: uci.slice(2, 4)};
+          if (uci.length > 4) move.promotion = uci[4];
+          const clone = new Chess(game.fen());
+          const m = clone.move(move);
+          $('best').textContent = m ? `${m.san} (${uci})` : uci;
+        } else {
+          $('best').textContent = 'No legal move';
+        }
+      }
+    };
+
+    worker.postMessage('uci');
+    $('engineBadge').textContent = 'Loading engine...';
+  }
+
+  // --- CHESS BOARD LOGIC ---
   function squareName(file, rank){ return files[file] + rank; }
+  
   function renderBoard(){
     boardEl.innerHTML = '';
     const rows = flipped ? [1,2,3,4,5,6,7,8] : [8,7,6,5,4,3,2,1];
     const cols = flipped ? [7,6,5,4,3,2,1,0] : [0,1,2,3,4,5,6,7];
+    
     for(const rank of rows) for(const file of cols){
       const sq = squareName(file,rank), piece = game.get(sq);
       const b = document.createElement('button');
@@ -85,18 +138,28 @@ button{cursor:pointer}button.primary{background:var(--accent);color:#052e24;bord
       if(selected===sq) b.classList.add('selected');
       if(targets.includes(sq)) b.classList.add('target');
       if(lastMove && (lastMove.from===sq || lastMove.to===sq)) b.classList.add('last');
-      b.setAttribute('aria-label', sq + (piece ? ' '+piece.color+piece.type : ''));
-      if(piece){ const span=document.createElement('span'); span.className='piece'; span.textContent=glyphs[piece.color+piece.type]; span.style.color=piece.color==='w'?'#fff':'#161616'; span.style.webkitTextStroke=piece.color==='w'?'1px #333':'0'; b.appendChild(span); }
+      
+      if(piece){ 
+        const span=document.createElement('span'); 
+        span.className='piece'; 
+        span.textContent=glyphs[piece.color+piece.type]; 
+        span.style.color=piece.color==='w'?'#fff':'#161616'; 
+        span.style.webkitTextStroke=piece.color==='w'?'1px #333':'0'; 
+        b.appendChild(span); 
+      }
+      
       b.addEventListener('click',()=>onSquare(sq));
       boardEl.appendChild(b);
     }
+    
     const hist = game.history({verbose:true});
     $('moves').textContent = hist.length ? hist.reduce((s,m,i)=>s+(i%2===0?`${Math.floor(i/2)+1}. `:'')+m.san+' ', '') : 'No moves yet.';
     $('gameStatus').textContent = game.isCheckmate() ? `Checkmate — ${game.turn()==='w'?'Black':'White'} wins.` :
       game.isDraw() ? 'Draw position.' : game.in_check() ? `${game.turn()==='w'?'White':'Black'} to move — check!` :
-      `${game.turn()==='w'?'White':'Black'} to move. Tap a piece, then its destination.`;
+      `${game.turn()==='w'?'White':'Black'} to move.`;
     $('undoBtn').disabled = !hist.length;
   }
+  
   function onSquare(sq){
     if(searching) stopAnalysis();
     const p = game.get(sq);
@@ -109,65 +172,27 @@ button{cursor:pointer}button.primary{background:var(--accent);color:#052e24;bord
     } else {selected=null;targets=[];}
     renderBoard();
   }
-  function clearAnalysis(){ $('eval').textContent='—';$('depthNow').textContent='—';$('nps').textContent='—';$('best').textContent='—';$('pv').textContent="Run an analysis to see the engine's suggested line."; }
   
-  function startEngine(){
-    if(worker) return;
-    try {
-      // FIX: Direct Worker instantiation instead of Blob. 
-      // This is required for GitHub Pages and local servers to load the .wasm correctly.
-      worker = new Worker('./stockfish-19-lite-single.js');
-      
-      worker.onmessage = e => handleEngine(String(e.data));
-      worker.onerror = e => { 
-          $('engineBadge').textContent='Engine failed to load'; 
-          $('gameStatus').textContent='Error: Make sure the file name is exactly correct.'; 
-          console.error(e); 
-      };
-      worker.postMessage('uci');
-      $('engineBadge').textContent='Loading engine…';
-    } catch(err){ 
-        $('engineBadge').textContent='Engine error'; 
-        $('gameStatus').textContent='Engine could not start: '+err.message; 
-        console.error(err);
-    }
-  }
-  
-  function handleEngine(line){
-    if(line==='uciok'){worker.postMessage('isready');}
-    if(line==='readyok'){engineReady=true;$('engineBadge').textContent='Stockfish ready · local CPU';$('analyzeBtn').disabled=false;$('gameStatus').textContent='Engine ready. Make moves and analyze any position.';}
-    if(line.startsWith('info ')){
-      const d=line.match(/\bdepth (\d+)/), score=line.match(/\bscore (cp|mate) (-?\d+)/), nps=line.match(/\bnps (\d+)/), pv=line.match(/\bpv (.+)/);
-      if(d)$('depthNow').textContent=d[1];
-      if(nps)$('nps').textContent=Number(nps[1]).toLocaleString();
-      if(score){
-        let val=score[1]==='mate'?'Mate in '+score[2]:(Number(score[2])/100).toFixed(2);
-        $('eval').textContent=val+(game.turn()==='w'?' (White)':' (side to move: '+(game.turn()==='w'?'White':'Black')+')');
-      }
-      if(pv) $('pv').textContent=pv[1].split(' ').slice(0,12).join(' ');
-    }
-    if(line.startsWith('bestmove ')){
-      searching=false;$('analyzeBtn').disabled=!engineReady;$('stopBtn').disabled=true;
-      const uci=line.split(/\s+/)[1];
-      if(uci && uci!=='(none)'){
-        const move={from:uci.slice(0,2),to:uci.slice(2,4)};
-        if(uci.length>4)move.promotion=uci[4];
-        const clone=new Chess(game.fen()), m=clone.move(move);
-        $('best').textContent=m?`${m.san} (${uci})`:uci;
-      } else $('best').textContent='No legal move';
-    }
+  function clearAnalysis(){ 
+    $('eval').textContent='—'; $('depthNow').textContent='—'; $('nps').textContent='—'; $('best').textContent='—'; 
+    $('pv').textContent="Run an analysis to see the engine's suggested line."; 
   }
   
   function analyze(){
-    if(!engineReady || game.game_over()) return;
+    if(!worker || game.game_over()) return;
     stopAnalysis(false); clearAnalysis(); searching=true;
-    $('analyzeBtn').disabled=true;$('stopBtn').disabled=false;$('gameStatus').textContent='Analyzing locally…';
-    worker.postMessage('position fen '+game.fen());
-    worker.postMessage('go depth '+$('depth').value);
+    $('analyzeBtn').disabled=true; $('stopBtn').disabled=false; $('gameStatus').textContent='Analyzing...';
+    
+    // Send current board position to engine
+    worker.postMessage('position fen ' + game.fen());
+    worker.postMessage('go depth ' + $('depth').value);
   }
+  
   function stopAnalysis(send=true){
-    if(worker && searching && send)worker.postMessage('stop');
-    searching=false;$('analyzeBtn').disabled=!engineReady;$('stopBtn').disabled=true;
+    if(worker && searching && send) worker.postMessage('stop');
+    searching=false; 
+    $('analyzeBtn').disabled=false; 
+    $('stopBtn').disabled=true;
   }
   
   $('analyzeBtn').addEventListener('click',analyze);
@@ -175,7 +200,6 @@ button{cursor:pointer}button.primary{background:var(--accent);color:#052e24;bord
   $('undoBtn').addEventListener('click',()=>{if(game.undo()){lastMove=null;selected=null;targets=[];clearAnalysis();renderBoard();}});
   $('resetBtn').addEventListener('click',()=>{game.reset();lastMove=null;selected=null;targets=[];clearAnalysis();renderBoard();});
   $('flipBtn').addEventListener('click',()=>{flipped=!flipped;renderBoard();});
-  window.addEventListener('beforeunload',()=>{if(worker)worker.terminate();});
   
   renderBoard();
   startEngine();
