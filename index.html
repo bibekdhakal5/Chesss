@@ -1,172 +1,49 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Local Stockfish Chess</title>
-<style>
-:root{color-scheme:dark;--bg:#111827;--panel:#1f2937;--text:#f3f4f6;--muted:#9ca3af;--accent:#34d399}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:16px system-ui,-apple-system,Segoe UI,sans-serif}
-main{max-width:900px;margin:auto;padding:18px}.top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
-h1{font-size:1.5rem;margin:0}.sub{color:var(--muted);margin:5px 0 18px}
-.layout{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(250px,.8fr);gap:16px;align-items:start}
-.panel{background:var(--panel);border:1px solid #374151;border-radius:16px;padding:14px}
-.board{display:grid;grid-template-columns:repeat(8,1fr);width:100%;aspect-ratio:1;border-radius:8px;overflow:hidden;touch-action:manipulation}
-.square{border:0;border-radius:0;display:flex;align-items:center;justify-content:center;aspect-ratio:1;padding:0;position:relative;font-size:clamp(24px,7vw,54px);line-height:1;cursor:pointer;color:#111827}
-.light{background:#ebecd0}.dark{background:#779556}.square.selected{box-shadow:inset 0 0 0 4px #facc15}.square.target:after{content:"";position:absolute;width:24%;height:24%;border-radius:50%;background:#26391d88}
-.square.last{background:#baca44}.piece{position:relative;z-index:1;text-shadow:0 1px 2px #0005}
-.controls{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
-button,select{font:inherit;border:1px solid #4b5563;border-radius:10px;padding:10px 12px;background:#374151;color:var(--text)}
-button{cursor:pointer}button.primary{background:var(--accent);color:#052e24;border-color:var(--accent);font-weight:700}button:disabled{opacity:.5;cursor:not-allowed}
-.status{font-size:.9rem;color:var(--muted);margin-top:10px;min-height:1.4em}
-.big{font-size:1.65rem;font-weight:750;margin:4px 0 12px}.muted{color:var(--muted)}.line{line-height:1.7;overflow-wrap:anywhere}.kv{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid #374151;padding:9px 0}
-.moves{max-height:180px;overflow:auto;line-height:1.8;font-variant-numeric:tabular-nums}
-.note{font-size:.86rem;color:var(--muted);line-height:1.5;margin-top:12px}
-@media(max-width:680px){main{padding:12px}.layout{grid-template-columns:1fr}.panel{padding:11px}.board{max-width:560px;margin:auto}.sub{margin-bottom:12px}}
-</style>
+    <meta charset="UTF-8">
+    <title>Stockfish Test</title>
 </head>
 <body>
-<main>
-  <div class="top"><h1>♟ Local Stockfish Chess</h1><span id="engineBadge" class="muted">Engine not loaded</span></div>
-  <p class="sub">Play moves on the board, then analyze the position on your device.</p>
-  <div class="layout">
-    <section class="panel">
-      <div id="board" class="board" aria-label="Chessboard"></div>
-      <div class="controls">
-        <button id="undoBtn">↶ Undo</button><button id="resetBtn">New game</button>
-        <button id="flipBtn">Flip board</button>
-      </div>
-      <div id="gameStatus" class="status">Tap a piece, then tap its destination square.</div>
-      <div class="muted" style="margin-top:8px;font-size:.85rem">Moves</div>
-      <div id="moves" class="moves">No moves yet.</div>
-    </section>
-    <section class="panel">
-      <h2 style="margin:0 0 10px;font-size:1.15rem">Engine analysis</h2>
-      <div class="kv"><span class="muted">Evaluation</span><strong id="eval">—</strong></div>
-      <div class="kv"><span class="muted">Depth</span><strong id="depthNow">—</strong></div>
-      <div class="kv"><span class="muted">Nodes / second</span><strong id="nps">—</strong></div>
-      <div style="margin-top:14px">
-        <label for="depth">Search depth</label><br>
-        <select id="depth" style="margin-top:7px;width:100%">
-          <option value="8">8 — quick</option><option value="10" selected>10 — balanced</option>
-          <option value="12">12 — deeper</option><option value="15">15 — slower</option>
-        </select>
-      </div>
-      <div class="controls">
-        <button id="analyzeBtn" class="primary" disabled>Analyze position</button>
-        <button id="stopBtn" disabled>Stop</button>
-      </div>
-      <div class="kv" style="margin-top:8px"><span class="muted">Best move</span><strong id="best">—</strong></div>
-      <p class="muted" style="margin-bottom:5px">Principal variation</p>
-      <div id="pv" class="line">Run an analysis to see the engine's suggested line.</div>
-      <p class="note">This uses Stockfish.js lite (WebAssembly) in a browser worker. The engine calculations run locally, but the first load needs internet to download the engine files. Keep the page open while it analyzes.</p>
-      <p class="note">If the engine does not start, open this page through GitHub Pages or a local web server rather than a file:// URL.</p>
-    </section>
-  </div>
-</main>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
-<script>
-(() => {
-  const $ = id => document.getElementById(id);
-  const game = new Chess();
-  const boardEl = $('board');
-  const files = 'abcdefgh';
-  const glyphs = {wk:'♔',wq:'♕',wr:'♖',wb:'♗',wn:'♘',wp:'♙',bk:'♚',bq:'♛',br:'♜',bb:'♝',bn:'♞',bp:'♟'};
-  let selected = null, targets = [], flipped = false, worker = null, engineReady = false, searching = false, lastMove = null;
-  const engineUrl = 'https://cdn.jsdelivr.net/npm/stockfish@19.0.1/bin/stockfish-19-lite-single.js';
-  const engineBase = 'https://cdn.jsdelivr.net/npm/stockfish@19.0.1/bin/';
-  function squareName(file, rank){ return files[file] + rank; }
-  function renderBoard(){
-    boardEl.innerHTML = '';
-    const rows = flipped ? [1,2,3,4,5,6,7,8] : [8,7,6,5,4,3,2,1];
-    const cols = flipped ? [7,6,5,4,3,2,1,0] : [0,1,2,3,4,5,6,7];
-    for(const rank of rows) for(const file of cols){
-      const sq = squareName(file,rank), piece = game.get(sq);
-      const b = document.createElement('button');
-      b.className = 'square ' + ((file + rank) % 2 ? 'dark':'light');
-      if(selected===sq) b.classList.add('selected');
-      if(targets.includes(sq)) b.classList.add('target');
-      if(lastMove && (lastMove.from===sq || lastMove.to===sq)) b.classList.add('last');
-      b.setAttribute('aria-label', sq + (piece ? ' '+piece.color+piece.type : ''));
-      if(piece){ const span=document.createElement('span'); span.className='piece'; span.textContent=glyphs[piece.color+piece.type]; span.style.color=piece.color==='w'?'#fff':'#161616'; span.style.webkitTextStroke=piece.color==='w'?'1px #333':'0'; b.appendChild(span); }
-      b.addEventListener('click',()=>onSquare(sq));
-      boardEl.appendChild(b);
-    }
-    const hist = game.history({verbose:true});
-    $('moves').textContent = hist.length ? hist.reduce((s,m,i)=>s+(i%2===0?`${Math.floor(i/2)+1}. `:'')+m.san+' ', '') : 'No moves yet.';
-    $('gameStatus').textContent = game.isCheckmate() ? `Checkmate — ${game.turn()==='w'?'Black':'White'} wins.` :
-      game.isDraw() ? 'Draw position.' : game.in_check() ? `${game.turn()==='w'?'White':'Black'} to move — check!` :
-      `${game.turn()==='w'?'White':'Black'} to move. Tap a piece, then its destination.`;
-    $('undoBtn').disabled = !hist.length;
-  }
-  function onSquare(sq){
-    if(searching) stopAnalysis();
-    const p = game.get(sq);
-    if(selected && targets.includes(sq)){
-      let move = game.move({from:selected,to:sq,promotion:'q'});
-      if(move){lastMove={from:move.from,to:move.to};selected=null;targets=[];clearAnalysis();renderBoard();return;}
-    }
-    if(p && p.color===game.turn()){
-      selected=sq;targets=game.moves({square:sq, verbose:true}).map(m=>m.to);
-    } else {selected=null;targets=[];}
-    renderBoard();
-  }
-  function clearAnalysis(){ $('eval').textContent='—';$('depthNow').textContent='—';$('nps').textContent='—';$('best').textContent='—';$('pv').textContent="Run an analysis to see the engine's suggested line."; }
-  function startEngine(){
-    if(worker) return;
-    try {
-      const wrapper = `self.Module = { locateFile: function(path){ return ${JSON.stringify(engineBase)} + path; } }; importScripts(${JSON.stringify(engineUrl)});`;
-      const blob = new Blob([wrapper], {type:'text/javascript'});
-      worker = new Worker(URL.createObjectURL(blob));
-      worker.onmessage = e => handleEngine(String(e.data));
-      worker.onerror = e => { $('engineBadge').textContent='Engine failed to load'; $('gameStatus').textContent='Could not load Stockfish. Check internet and try GitHub Pages.'; console.error(e); };
-      worker.postMessage('uci');
-      $('engineBadge').textContent='Loading engine…';
-    } catch(err){ $('engineBadge').textContent='Engine error'; $('gameStatus').textContent='Engine could not start: '+err.message; }
-  }
-  function handleEngine(line){
-    if(line==='uciok'){worker.postMessage('isready');}
-    if(line==='readyok'){engineReady=true;$('engineBadge').textContent='Stockfish ready · local CPU';$('analyzeBtn').disabled=false;$('gameStatus').textContent='Engine ready. Make moves and analyze any position.';}
-    if(line.startsWith('info ')){
-      const d=line.match(/\bdepth (\d+)/), score=line.match(/\bscore (cp|mate) (-?\d+)/), nps=line.match(/\bnps (\d+)/), pv=line.match(/\bpv (.+)/);
-      if(d)$('depthNow').textContent=d[1];
-      if(nps)$('nps').textContent=Number(nps[1]).toLocaleString();
-      if(score){
-        let val=score[1]==='mate'?'Mate in '+score[2]:(Number(score[2])/100).toFixed(2);
-        $('eval').textContent=val+(game.turn()==='w'?' (White)':' (side to move: '+(game.turn()==='w'?'White':'Black')+')');
-      }
-      if(pv) $('pv').textContent=pv[1].split(' ').slice(0,12).join(' ');
-    }
-    if(line.startsWith('bestmove ')){
-      searching=false;$('analyzeBtn').disabled=!engineReady;$('stopBtn').disabled=true;
-      const uci=line.split(/\s+/)[1];
-      if(uci && uci!=='(none)'){
-        const move={from:uci.slice(0,2),to:uci.slice(2,4)};
-        if(uci.length>4)move.promotion=uci[4];
-        const clone=new Chess(game.fen()), m=clone.move(move);
-        $('best').textContent=m?`${m.san} (${uci})`:uci;
-      } else $('best').textContent='No legal move';
-    }
-  }
-  function analyze(){
-    if(!engineReady || game.game_over()) return;
-    stopAnalysis(false); clearAnalysis(); searching=true;
-    $('analyzeBtn').disabled=true;$('stopBtn').disabled=false;$('gameStatus').textContent='Analyzing locally…';
-    worker.postMessage('position fen '+game.fen());
-    worker.postMessage('go depth '+$('depth').value);
-  }
-  function stopAnalysis(send=true){
-    if(worker && searching && send)worker.postMessage('stop');
-    searching=false;$('analyzeBtn').disabled=!engineReady;$('stopBtn').disabled=true;
-  }
-  $('analyzeBtn').addEventListener('click',analyze);
-  $('stopBtn').addEventListener('click',()=>stopAnalysis());
-  $('undoBtn').addEventListener('click',()=>{if(game.undo()){lastMove=null;selected=null;targets=[];clearAnalysis();renderBoard();}});
-  $('resetBtn').addEventListener('click',()=>{game.reset();lastMove=null;selected=null;targets=[];clearAnalysis();renderBoard();});
-  $('flipBtn').addEventListener('click',()=>{flipped=!flipped;renderBoard();});
-  window.addEventListener('beforeunload',()=>{if(worker)worker.terminate();});
-  renderBoard();startEngine();
-})();
-</script>
+    <h2>Stockfish Engine Test</h2>
+    <button onclick="startEngine()">Start Engine</button>
+    <button onclick="getBestMove()">Get Best Move (Starting Position)</button>
+    <pre id="output">Engine not loaded...</pre>
+
+    <script>
+        let stockfish = null;
+
+        function startEngine() {
+            // Ensure stockfish-19-lite-single.js and the corresponding .wasm file are in the same directory as this html file
+            // Note: If it's a GitHub Pages repository, the path is usually './stockfish-19-lite-single.js'
+            stockfish = new Worker('./stockfish-19-lite-single.js');
+
+            stockfish.onmessage = function(event) {
+                const line = event.data;
+                document.getElementById('output').textContent += line + '\n';
+                
+                // If the engine is ready, you can automatically start computing
+                if (line === 'uciok') {
+                    console.log('Engine initialized successfully');
+                }
+            };
+
+            // Initialize UCI protocol
+            stockfish.postMessage('uci');
+            document.getElementById('output').textContent = 'Engine loading...\n';
+        }
+
+        function getBestMove() {
+            if (!stockfish) {
+                alert('Please click "Start Engine" first!');
+                return;
+            }
+
+            // Set starting position
+            stockfish.postMessage('position startpos');
+            // Let the engine think for 1000 milliseconds
+            stockfish.postMessage('go movetime 1000');
+        }
+    </script>
 </body>
 </html>
