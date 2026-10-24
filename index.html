@@ -1,855 +1,481 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Stockfish Analysis Board</title>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pawn Break — a chess variant</title>
+<style>
+  :root {
+    --light: #efe3c8;
+    --dark:  #a8835a;
+    --bg1:   #1d2632;
+    --bg2:   #0e131a;
+    --ink:   #e8eef6;
+    --muted: #93a4b8;
+    --accent:#7dd3a8;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    min-height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    padding: 22px 14px 34px;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color: var(--ink);
+    background: radial-gradient(120% 90% at 50% 0%, var(--bg1), var(--bg2) 65%);
+  }
+  header { text-align: center; }
+  h1 { margin: 0; font-size: 24px; letter-spacing: .06em; text-transform: uppercase; }
+  .tagline { margin: 6px 0 0; font-size: 12.5px; color: var(--muted); max-width: 350px; line-height: 1.45; }
 
-  <!-- Chessboard.js CSS -->
-  <link rel="stylesheet"
-        href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css" />
+  /* ---------- board ---------- */
+  .board {
+    --cell: min(10.8vw, 54px);
+    width: calc(var(--cell) * 8);
+    height: calc(var(--cell) * 8);
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    grid-template-rows: repeat(8, 1fr);
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 20px 44px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.07);
+    touch-action: manipulation;
+  }
+  .cell { position: relative; display: grid; place-items: center; cursor: pointer; }
+  .cell.light { background: var(--light); }
+  .cell.dark  { background: var(--dark); }
+  .board.locked .cell { cursor: default; }
 
-  <style>
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
+  .cell::before { content: ''; position: absolute; inset: 0; background: transparent; pointer-events: none; }
+  .cell.last-from::before,
+  .cell.last-to::before   { background: rgba(255, 206, 84, .30); }
+  .cell.selected::before  { background: rgba(125, 211, 168, .55); }
 
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-      background: #1e1e2f;
-      color: #e0e0e0;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 20px;
-      min-height: 100vh;
-    }
+  .cell.move-target::after,
+  .cell.capture-target::after {
+    content: ''; position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%); border-radius: 50%; pointer-events: none;
+  }
+  .cell.move-target::after    { width: 26%; height: 26%; background: rgba(30,40,30,.38); }
+  .cell.capture-target::after { width: 82%; height: 82%;
+    border: calc(var(--cell) * .07) solid rgba(214,69,69,.85); }
 
-    h1 {
-      font-size: 1.6rem;
-      margin-bottom: 4px;
-      color: #f0c040;
-      letter-spacing: 1px;
-    }
+  .pawn {
+    position: relative; z-index: 1;
+    font-size: calc(var(--cell) * .74);
+    line-height: 1;
+    user-select: none; -webkit-user-select: none;
+  }
+  .pawn.white {
+    color: #fffdf6;
+    text-shadow: 0 0 1.5px #33291c, 1px 1px 0 #33291c, -1px 1px 0 #33291c,
+                 1px -1px 0 #33291c, -1px -1px 0 #33291c, 0 3px 6px rgba(0,0,0,.4);
+  }
+  .pawn.black { color: #15161a; text-shadow: 0 3px 6px rgba(0,0,0,.4); }
 
-    .subtitle {
-      font-size: 0.85rem;
-      color: #888;
-      margin-bottom: 20px;
-    }
+  .coord { position: absolute; font-size: 9.5px; font-weight: 700; line-height: 1;
+           opacity: .5; pointer-events: none; z-index: 2; }
+  .coord-file { bottom: 3px; right: 4px; }
+  .coord-rank { top: 3px; left: 4px; }
+  .cell.light .coord { color: #6a5638; }
+  .cell.dark  .coord { color: #f6ecd8; }
 
-    .main-container {
-      display: flex;
-      gap: 28px;
-      flex-wrap: wrap;
-      justify-content: center;
-      width: 100%;
-      max-width: 1100px;
-    }
+  /* ---------- ui ---------- */
+  .status {
+    min-height: 22px; font-size: 14px; font-weight: 600;
+    text-align: center; color: var(--accent);
+  }
+  .status[data-state="over"] { color: #ffd166; }
 
-    /* ----- Board column ----- */
-    .board-section {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 12px;
-    }
+  .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: center; }
+  select, button {
+    font: inherit; font-size: 13px; padding: 8px 12px; border-radius: 8px;
+    border: 1px solid rgba(255,255,255,.14);
+    background: rgba(255,255,255,.06); color: var(--ink); cursor: pointer;
+  }
+  select:hover, button:hover { background: rgba(255,255,255,.12); }
+  select option { background: #1a222c; }
 
-    #myBoard {
-      width: 480px;
-      max-width: 90vw;
-    }
-
-    .eval-bar-container {
-      width: 100%;
-      height: 28px;
-      background: #333;
-      border-radius: 6px;
-      overflow: hidden;
-      position: relative;
-      display: flex;
-      align-items: center;
-    }
-
-    .eval-bar-fill {
-      height: 100%;
-      width: 50%;
-      background: #f0f0f0;
-      transition: width 0.35s ease;
-      border-radius: 6px;
-    }
-
-    .eval-bar-label {
-      position: absolute;
-      left: 50%;
-      transform: translateX(-50%);
-      font-size: 0.8rem;
-      font-weight: 700;
-      color: #111;
-      pointer-events: none;
-      text-shadow: 0 0 3px rgba(255,255,255,0.6);
-    }
-
-    /* ----- Sidebar ----- */
-    .sidebar {
-      width: 340px;
-      max-width: 90vw;
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-    }
-
-    .panel {
-      background: #2a2a3d;
-      border-radius: 10px;
-      padding: 14px 16px;
-      border: 1px solid #3a3a50;
-    }
-
-    .panel h2 {
-      font-size: 0.95rem;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      color: #f0c040;
-      margin-bottom: 10px;
-      border-bottom: 1px solid #3a3a50;
-      padding-bottom: 6px;
-    }
-
-    .status-row {
-      display: flex;
-      justify-content: space-between;
-      font-size: 0.85rem;
-      margin-bottom: 6px;
-      color: #aaa;
-    }
-
-    .status-row span:last-child {
-      color: #e0e0e0;
-      font-weight: 600;
-      text-align: right;
-      max-width: 60%;
-      word-break: break-word;
-    }
-
-    .best-move {
-      font-size: 1.3rem;
-      font-weight: 700;
-      color: #4caf50;
-      text-align: center;
-      padding: 6px 0;
-      min-height: 2.2rem;
-    }
-
-    .pv-line {
-      font-size: 0.8rem;
-      color: #bbb;
-      line-height: 1.4;
-      word-break: break-word;
-      max-height: 80px;
-      overflow-y: auto;
-      font-family: 'Courier New', monospace;
-    }
-
-    /* ----- Controls ----- */
-    .controls-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-    }
-
-    button {
-      padding: 9px 12px;
-      border: none;
-      border-radius: 7px;
-      font-size: 0.82rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: background 0.2s, transform 0.1s;
-      background: #3a3a55;
-      color: #e0e0e0;
-    }
-
-    button:hover {
-      background: #4a4a6a;
-    }
-
-    button:active {
-      transform: scale(0.97);
-    }
-
-    button.primary {
-      background: #f0c040;
-      color: #1e1e2f;
-    }
-
-    button.primary:hover {
-      background: #ffd860;
-    }
-
-    button.danger {
-      background: #c0392b;
-      color: #fff;
-    }
-
-    button.danger:hover {
-      background: #e74c3c;
-    }
-
-    button:disabled {
-      opacity: 0.45;
-      cursor: not-allowed;
-      transform: none;
-    }
-
-    .depth-control {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      font-size: 0.85rem;
-      color: #aaa;
-    }
-
-    .depth-control input[type="range"] {
-      flex: 1;
-      accent-color: #f0c040;
-    }
-
-    /* ----- Move history ----- */
-    .move-list {
-      max-height: 160px;
-      overflow-y: auto;
-      font-size: 0.82rem;
-      line-height: 1.7;
-      font-family: 'Courier New', monospace;
-      color: #ccc;
-    }
-
-    .move-list .move-number {
-      color: #777;
-      margin-right: 4px;
-    }
-
-    .move-list .white-move {
-      color: #fff;
-      font-weight: 600;
-    }
-
-    .move-list .black-move {
-      color: #f0c040;
-      font-weight: 600;
-    }
-
-    /* ----- FEN / PGN inputs ----- */
-    .fen-input,
-    .pgn-input {
-      width: 100%;
-      padding: 8px 10px;
-      background: #1e1e2f;
-      border: 1px solid #3a3a50;
-      border-radius: 6px;
-      color: #e0e0e0;
-      font-family: 'Courier New', monospace;
-      font-size: 0.75rem;
-      resize: vertical;
-    }
-
-    .fen-input:focus,
-    .pgn-input:focus {
-      outline: none;
-      border-color: #f0c040;
-    }
-
-    .input-row {
-      display: flex;
-      gap: 8px;
-      margin-top: 8px;
-    }
-
-    .input-row button {
-      flex: 1;
-    }
-
-    /* ----- Responsive ----- */
-    @media (max-width: 880px) {
-      .main-container {
-        flex-direction: column;
-        align-items: center;
-      }
-      .sidebar {
-        width: 480px;
-        max-width: 90vw;
-      }
-    }
-
-    /* ----- Loading indicator ----- */
-    .engine-status {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 0.8rem;
-      color: #888;
-    }
-
-    .dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: #555;
-      display: inline-block;
-    }
-
-    .dot.ready {
-      background: #4caf50;
-      box-shadow: 0 0 6px #4caf50;
-    }
-
-    .dot.thinking {
-      background: #f0c040;
-      animation: pulse 0.8s infinite alternate;
-    }
-
-    @keyframes pulse {
-      from { opacity: 1; }
-      to   { opacity: 0.3; }
-    }
-  </style>
+  details {
+    max-width: 460px; font-size: 13px; line-height: 1.55; color: #c3d0de;
+    background: rgba(255,255,255,.04);
+    border: 1px solid rgba(255,255,255,.08);
+    border-radius: 10px; padding: 10px 14px;
+  }
+  details summary { cursor: pointer; font-weight: 600; color: var(--ink); }
+  details ul { margin: 8px 0 0; padding-left: 18px; }
+  details li { margin: 3px 0; }
+  details strong { color: #fff; }
+</style>
 </head>
 <body>
 
-  <h1>♟ Stockfish Analysis Board</h1>
-  <p class="subtitle">Powered by Stockfish 19 Lite (WASM) &middot; Drag pieces to play</p>
+<header>
+  <h1>Pawn Break</h1>
+  <p class="tagline">Your back rank is the gate. Open theirs before they open yours.</p>
+</header>
 
-  <div class="main-container">
+<div id="board" class="board" aria-label="Pawn Break board"></div>
+<div id="status" class="status"></div>
 
-    <!-- ============ BOARD COLUMN ============ -->
-    <div class="board-section">
-      <div id="myBoard"></div>
+<div class="controls">
+  <select id="mode">
+    <option value="two">Two players</option>
+    <option value="white">You: White vs computer</option>
+    <option value="black">You: Black vs computer</option>
+  </select>
+  <button id="newGame">New game</button>
+</div>
 
-      <!-- Evaluation bar -->
-      <div class="eval-bar-container">
-        <div class="eval-bar-fill" id="evalBarFill"></div>
-        <span class="eval-bar-label" id="evalBarLabel">0.00</span>
-      </div>
+<details>
+  <summary>Rules</summary>
+  <ul>
+    <li>8×8 board. White pawns start on rank 1, Black pawns on rank 8. White moves first.</li>
+    <li>Pawns move like chess pawns: one square forward, or <strong>two squares from their starting rank</strong> if both squares are empty. They capture one square diagonally forward.</li>
+    <li>No promotion, no en passant, no kings.</li>
+    <li><strong>Win:</strong> move any pawn onto the opponent's back rank, or leave the opponent with no pawns.</li>
+    <li><strong>Draw:</strong> a player who still has pawns but has no legal move.</li>
+  </ul>
+</details>
 
-      <!-- Board controls -->
-      <div class="controls-grid" style="width:100%;">
-        <button class="primary" id="btnAnalyze">🔍 Analyze</button>
-        <button id="btnHint">💡 Best Move</button>
-        <button id="btnFlip">🔄 Flip Board</button>
-        <button class="danger" id="btnReset">♻ New Game</button>
-      </div>
-    </div>
+<script>
+(function () {
+  'use strict';
 
-    <!-- ============ SIDEBAR ============ -->
-    <div class="sidebar">
+  const N = 8;
+  const W = 'w', B = 'b';
+  const WIN_SCORE = 100000;
 
-      <!-- Engine analysis panel -->
-      <div class="panel">
-        <h2>Engine Analysis</h2>
-        <div class="engine-status" style="margin-bottom:8px;">
-          <span class="dot" id="engineDot"></span>
-          <span id="engineStatusText">Initializing engine…</span>
-        </div>
-        <div class="best-move" id="bestMoveDisplay">—</div>
-        <div class="status-row">
-          <span>Evaluation</span>
-          <span id="evalDisplay">0.00</span>
-        </div>
-        <div class="status-row">
-          <span>Depth</span>
-          <span id="depthDisplay">—</span>
-        </div>
-        <div class="status-row">
-          <span>Nodes</span>
-          <span id="nodesDisplay">—</span>
-        </div>
-        <div class="pv-line" id="pvDisplay">Principal variation will appear here…</div>
-        <div class="depth-control" style="margin-top:10px;">
-          <label for="depthSlider">Depth</label>
-          <input type="range" id="depthSlider" min="5" max="22" value="12" step="1">
-          <span id="depthValue" style="min-width:24px;text-align:right;">12</span>
-        </div>
-      </div>
+  const boardEl  = document.getElementById('board');
+  const statusEl = document.getElementById('status');
+  const modeEl   = document.getElementById('mode');
+  const newBtn   = document.getElementById('newGame');
 
-      <!-- Move history -->
-      <div class="panel">
-        <h2>Move History</h2>
-        <div class="move-list" id="moveList">No moves yet.</div>
-      </div>
+  let state = null;
+  let selected = null;
+  let legalTargets = [];
+  let aiThinking = false;
+  let aiTimer = null;
 
-      <!-- FEN import -->
-      <div class="panel">
-        <h2>FEN</h2>
-        <textarea class="fen-input" id="fenInput" rows="2" spellcheck="false"
-          placeholder="Paste a FEN string…"></textarea>
-        <div class="input-row">
-          <button id="btnLoadFen">Load FEN</button>
-          <button id="btnCopyFen">Copy FEN</button>
-        </div>
-      </div>
+  /* ============================ MODEL ============================ */
 
-      <!-- PGN import -->
-      <div class="panel">
-        <h2>PGN</h2>
-        <textarea class="pgn-input" id="pgnInput" rows="4" spellcheck="false"
-          placeholder="Paste PGN here…"></textarea>
-        <div class="input-row">
-          <button id="btnLoadPgn">Load PGN</button>
-          <button id="btnCopyPgn">Copy PGN</button>
-        </div>
-      </div>
+  const other = c => (c === W ? B : W);
 
-    </div>
-  </div>
-
-  <!-- ==================== SCRIPTS ==================== -->
-  <!-- jQuery (required by chessboard.js) -->
-  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
-
-  <!-- chessboard.js -->
-  <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
-
-  <!-- chess.js (move generation / validation / FEN / PGN) -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.13.4/chess.min.js"></script>
-
-  <!-- Stockfish 19 Lite (single-threaded WASM – no CORS headers needed) -->
-  <script>
-    // We'll load the engine as a Web Worker after the page is ready.
-    // Using the "lite single-threaded" build from nmrugg/stockfish.js
-    // via jsDelivr CDN.  This is ~1.7 MB and runs everywhere without
-    // special COOP/COEP headers.
-  </script>
-
-  <script>
-    /* ============================================================
-       GLOBAL STATE
-       ============================================================ */
-    let board = null;                 // chessboard.js instance
-    let game = new Chess();           // chess.js game instance
-    let stockfishWorker = null;       // Web Worker running Stockfish
-    let engineReady = false;          // UCI handshake completed
-    let isThinking = false;           // engine currently analyzing
-    let analysisDepth = 12;           // default depth
-    let currentBestMove = null;       // UCI move string (e.g. "e2e4")
-    let lastEval = null;              // numeric evaluation (centipawns or mate)
-    let lastEvalType = 'cp';          // 'cp' or 'mate'
-    let pendingAnalysis = false;      // analysis requested but engine busy
-
-    const $board = $('#myBoard');
-    const $moveList = $('#moveList');
-    const $bestMoveDisplay = $('#bestMoveDisplay');
-    const $evalDisplay = $('#evalDisplay');
-    const $depthDisplay = $('#depthDisplay');
-    const $nodesDisplay = $('#nodesDisplay');
-    const $pvDisplay = $('#pvDisplay');
-    const $evalBarFill = $('#evalBarFill');
-    const $evalBarLabel = $('#evalBarLabel');
-    const $engineDot = $('#engineDot');
-    const $engineStatusText = $('#engineStatusText');
-    const $depthSlider = $('#depthSlider');
-    const $depthValue = $('#depthValue');
-    const $fenInput = $('#fenInput');
-    const $pgnInput = $('#pgnInput');
-
-    /* ============================================================
-       INITIALISE BOARD
-       ============================================================ */
-    function initBoard() {
-      board = Chessboard('myBoard', {
-        draggable: true,
-        position: 'start',
-        onDragStart: onDragStart,
-        onDrop: onDrop,
-        onSnapEnd: onSnapEnd,
-        pieceTheme: 'https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/img/chesspieces/wikipedia/{piece}.png'
-      });
-      window.addEventListener('resize', () => board.resize());
+  function makeBoard() {
+    const b = Array.from({ length: N }, () => Array(N).fill(null));
+    for (let c = 0; c < N; c++) {
+      b[0][c]     = { color: B };   // rank 8 = Black home
+      b[N - 1][c] = { color: W };   // rank 1 = White home
     }
+    return b;
+  }
 
-    /* ============================================================
-       BOARD CALLBACKS
-       ============================================================ */
-    function onDragStart(source, piece) {
-      // Do not allow moves if the game is over or engine is thinking
-      if (game.game_over() || isThinking) return false;
+  function movesFrom(board, r, c) {
+    const p = board[r][c];
+    if (!p) return [];
+    const dir     = p.color === W ? -1 : 1;
+    const homeRow = p.color === W ? N - 1 : 0;
+    const moves   = [];
+    const r1      = r + dir;
 
-      // Only allow the side whose turn it is to move
-      if (game.turn() === 'w' && piece.search(/^b/) !== -1) return false;
-      if (game.turn() === 'b' && piece.search(/^w/) !== -1) return false;
-
-      return true;
-    }
-
-    function onDrop(source, target) {
-      // See if the move is legal
-      const move = game.move({
-        from: source,
-        to: target,
-        promotion: 'q' // Always promote to a queen for simplicity
-      });
-
-      // Illegal move – snap piece back
-      if (move === null) return 'snapback';
-
-      // Update the move history and trigger analysis
-      updateMoveHistory();
-      clearAnalysisDisplay();
-      requestAnalysis();
-    }
-
-    function onSnapEnd() {
-      board.position(game.fen());
-    }
-
-    /* ============================================================
-       MOVE HISTORY
-       ============================================================ */
-    function updateMoveHistory() {
-      const history = game.history({ verbose: true });
-      if (history.length === 0) {
-        $moveList.html('No moves yet.');
-        return;
-      }
-
-      let html = '';
-      for (let i = 0; i < history.length; i += 2) {
-        const moveNumber = Math.floor(i / 2) + 1;
-        const whiteMove = history[i];
-        const blackMove = history[i + 1];
-
-        html += `<span class="move-number">${moveNumber}.</span>`;
-        html += `<span class="white-move">${whiteMove.san}</span>`;
-        if (blackMove) {
-          html += ` <span class="black-move">${blackMove.san}</span>`;
-        }
-        html += '<br>';
-      }
-      $moveList.html(html);
-      // Scroll to bottom
-      $moveList.scrollTop($moveList[0].scrollHeight);
-    }
-
-    /* ============================================================
-       STOCKFISH ENGINE
-       ============================================================ */
-    function initEngine() {
-      // Path to the lite single-threaded Stockfish 19 build
-      const engineJs = 'https://cdn.jsdelivr.net/npm/stockfish@19.0.0/src/stockfish-19-lite-single.js';
-
-      try {
-        stockfishWorker = new Worker(engineJs);
-      } catch (e) {
-        // Fallback: try the older stockfish.js CDN
-        try {
-          stockfishWorker = new Worker('https://cdn.jsdelivr.net/npm/stockfish@16.0.0/src/stockfish.js');
-        } catch (e2) {
-          setEngineStatus('error', 'Failed to load engine');
-          return;
+    if (r1 >= 0 && r1 < N) {
+      if (!board[r1][c]) {
+        moves.push({ from: { r, c }, to: { r: r1, c }, capture: false });
+        const r2 = r + 2 * dir;
+        if (r === homeRow && r2 >= 0 && r2 < N && !board[r2][c]) {
+          moves.push({ from: { r, c }, to: { r: r2, c }, capture: false });
         }
       }
-
-      stockfishWorker.onmessage = handleEngineMessage;
-
-      // UCI handshake
-      sendCommand('uci');
-    }
-
-    function sendCommand(cmd) {
-      if (stockfishWorker) {
-        stockfishWorker.postMessage(cmd);
-      }
-    }
-
-    function handleEngineMessage(event) {
-      const line = event.data;
-      if (typeof line !== 'string') return;
-
-      // ---- UCI handshake ----
-      if (line === 'uciok') {
-        sendCommand('isready');
-        return;
-      }
-      if (line === 'readyok') {
-        engineReady = true;
-        setEngineStatus('ready', 'Engine ready');
-        return;
-      }
-
-      // ---- Analysis info lines ----
-      if (line.startsWith('info depth')) {
-        parseInfoLine(line);
-      }
-
-      // ---- Best move ----
-      if (line.startsWith('bestmove')) {
-        const parts = line.split(' ');
-        const move = parts[1];
-        if (move && move !== '(none)') {
-          currentBestMove = move;
-          displayBestMove(move);
-        }
-        isThinking = false;
-        setEngineStatus('ready', 'Engine ready');
-        // If another analysis was requested while we were thinking, run it
-        if (pendingAnalysis) {
-          pendingAnalysis = false;
-          requestAnalysis();
+      for (const dc of [-1, 1]) {
+        const nc = c + dc;
+        if (nc < 0 || nc >= N) continue;
+        const t = board[r1][nc];
+        if (t && t.color !== p.color) {
+          moves.push({ from: { r, c }, to: { r: r1, c: nc }, capture: true });
         }
       }
     }
+    return moves;
+  }
 
-    /* ------------------------------------------------------------
-       Parse UCI "info" lines to extract eval, depth, nodes, PV
-       ------------------------------------------------------------ */
-    function parseInfoLine(line) {
-      // Depth
-      const depthMatch = line.match(/depth (\d+)/);
-      if (depthMatch) {
-        $depthDisplay.text(depthMatch[1]);
+  function allMoves(board, color) {
+    const out = [];
+    for (let r = 0; r < N; r++)
+      for (let c = 0; c < N; c++) {
+        const p = board[r][c];
+        if (p && p.color === color) out.push(...movesFrom(board, r, c));
       }
+    return out;
+  }
 
-      // Nodes
-      const nodesMatch = line.match(/nodes (\d+)/);
-      if (nodesMatch) {
-        const n = parseInt(nodesMatch[1], 10);
-        $nodesDisplay.text(n.toLocaleString());
+  function applyMove(board, mv) {
+    const nb = board.map(row => row.slice());
+    nb[mv.to.r][mv.to.c] = nb[mv.from.r][mv.from.c];
+    nb[mv.from.r][mv.from.c] = null;
+    return nb;
+  }
+
+  function countPawns(board, color) {
+    let n = 0;
+    for (let r = 0; r < N; r++)
+      for (let c = 0; c < N; c++) {
+        const p = board[r][c];
+        if (p && p.color === color) n++;
       }
+    return n;
+  }
 
-      // Score (cp or mate)
-      const cpMatch = line.match(/score cp (-?\d+)/);
-      const mateMatch = line.match(/score mate (-?\d+)/);
-      if (cpMatch) {
-        const cp = parseInt(cpMatch[1], 10);
-        lastEval = cp;
-        lastEvalType = 'cp';
-        updateEvalDisplay(cp, 'cp');
-      } else if (mateMatch) {
-        const mateIn = parseInt(mateMatch[1], 10);
-        lastEval = mateIn;
-        lastEvalType = 'mate';
-        updateEvalDisplay(mateIn, 'mate');
+  const reachesBack = (mv, color) =>
+    (color === W && mv.to.r === 0) || (color === B && mv.to.r === N - 1);
+
+  /* ============================= AI ============================== */
+
+  function evalBoard(board) {
+    let score = 0;
+    for (let r = 0; r < N; r++)
+      for (let c = 0; c < N; c++) {
+        const p = board[r][c];
+        if (!p) continue;
+        const adv = p.color === W ? (N - 1 - r) : r;     // 0..7
+        const v = 100 + adv * 10 + adv * adv * 6;
+        score += p.color === W ? v : -v;
       }
+    return score;
+  }
 
-      // Principal variation
-      const pvMatch = line.match(/ pv (.+)/);
-      if (pvMatch) {
-        const pv = pvMatch[1].trim();
-        $pvDisplay.text(pv);
+  function orderMoves(moves, color) {
+    const rank = mv => (mv.capture ? 50 : 0) +
+      (color === W ? (N - 1 - mv.to.r) : mv.to.r) * 3;
+    return moves.slice().sort((a, b) => rank(b) - rank(a));
+  }
+
+  function search(board, depth, alpha, beta, turn) {
+    if (countPawns(board, turn) === 0) return turn === W ? -WIN_SCORE : WIN_SCORE;
+
+    const moves = allMoves(board, turn);
+    if (moves.length === 0) return 0;                    // draw
+
+    for (const mv of moves) {
+      if (reachesBack(mv, turn)) {
+        const s = WIN_SCORE - (10 - depth);
+        return turn === W ? s : -s;
       }
     }
+    if (depth <= 0) return evalBoard(board);
 
-    /* ------------------------------------------------------------
-       Display helpers
-       ------------------------------------------------------------ */
-    function updateEvalDisplay(value, type) {
-      if (type === 'mate') {
-        const label = value > 0 ? `M${value}` : `M${Math.abs(value)}`;
-        $evalDisplay.text(label);
-        // Mate in N for white → bar full white; mate for black → full black
-        const pct = value > 0 ? 100 : 0;
-        $evalBarFill.css('width', pct + '%');
-        $evalBarLabel.text(label);
-      } else {
-        // Centipawns: convert to pawn units
-        const pawns = (value / 100).toFixed(2);
-        $evalDisplay.text(pawns);
-        // Map evaluation to bar width (sigmoid-ish)
-        // Clamp between -8 and +8 pawns for visual purposes
-        const clamped = Math.max(-800, Math.min(800, value));
-        const pct = 50 + (clamped / 800) * 50; // 0–100
-        $evalBarFill.css('width', pct + '%');
-        $evalBarLabel.text(pawns);
-      }
+    const maxing = turn === W;
+    let best = maxing ? -Infinity : Infinity;
+
+    for (const mv of orderMoves(moves, turn)) {
+      const s = search(applyMove(board, mv), depth - 1, alpha, beta, other(turn));
+      if (maxing) { if (s > best) best = s; if (best > alpha) alpha = best; }
+      else        { if (s < best) best = s; if (best < beta)  beta  = best; }
+      if (beta <= alpha) break;
     }
+    return best;
+  }
 
-    function displayBestMove(uciMove) {
-      // Convert UCI move (e2e4) to SAN for readability
-      const tempGame = new Chess(game.fen());
-      try {
-        const from = uciMove.substring(0, 2);
-        const to = uciMove.substring(2, 4);
-        const promotion = uciMove.length > 4 ? uciMove[4] : undefined;
-        const move = tempGame.move({ from, to, promotion });
-        if (move) {
-          $bestMoveDisplay.text(move.san);
-        } else {
-          $bestMoveDisplay.text(uciMove);
+  function bestMove(board, color) {
+    const moves = allMoves(board, color);
+    if (moves.length === 0) return null;
+
+    const ordered = orderMoves(moves, color);
+    let best = ordered[0];
+    let bestScore = color === W ? -Infinity : Infinity;
+
+    for (const mv of ordered) {
+      if (reachesBack(mv, color)) return mv;
+      const nb = applyMove(board, mv);
+      if (countPawns(nb, other(color)) === 0) return mv;
+
+      const s = search(nb, 2, -Infinity, Infinity, other(color));
+      if (color === W ? s > bestScore : s < bestScore) { bestScore = s; best = mv; }
+    }
+    return best;
+  }
+
+  const aiColor = () => (modeEl.value === 'white' ? B : modeEl.value === 'black' ? W : null);
+
+  /* ============================ RENDER =========================== */
+
+  function render() {
+    const flip = modeEl.value === 'black';
+    const frag = document.createDocumentFragment();
+
+    const targets = new Map();
+    for (const m of legalTargets) targets.set(m.to.r * N + m.to.c, m);
+
+    for (let dr = 0; dr < N; dr++) {
+      for (let dc = 0; dc < N; dc++) {
+        const r = flip ? N - 1 - dr : dr;
+        const c = flip ? N - 1 - dc : dc;
+
+        const cell = document.createElement('div');
+        cell.className = 'cell ' + ((r + c) % 2 === 0 ? 'light' : 'dark');
+        cell.dataset.r = r;
+        cell.dataset.c = c;
+
+        if (selected && selected.r === r && selected.c === c) cell.classList.add('selected');
+
+        const lm = state.lastMove;
+        if (lm) {
+          if (lm.from.r === r && lm.from.c === c) cell.classList.add('last-from');
+          if (lm.to.r === r   && lm.to.c === c)   cell.classList.add('last-to');
         }
-      } catch (e) {
-        $bestMoveDisplay.text(uciMove);
+
+        const t = targets.get(r * N + c);
+        if (t) cell.classList.add(t.capture ? 'capture-target' : 'move-target');
+
+        if (dr === N - 1) {
+          const s = document.createElement('span');
+          s.className = 'coord coord-file';
+          s.textContent = 'abcdefgh'[c];
+          cell.appendChild(s);
+        }
+        if (dc === 0) {
+          const s = document.createElement('span');
+          s.className = 'coord coord-rank';
+          s.textContent = String(N - r);
+          cell.appendChild(s);
+        }
+
+        const p = state.board[r][c];
+        if (p) {
+          const el = document.createElement('div');
+          el.className = 'pawn ' + (p.color === W ? 'white' : 'black');
+          el.textContent = '♟';
+          cell.appendChild(el);
+        }
+
+        frag.appendChild(cell);
       }
     }
 
-    function clearAnalysisDisplay() {
-      $bestMoveDisplay.text('—');
-      $pvDisplay.text('Analyzing…');
-      $depthDisplay.text('—');
-      $nodesDisplay.text('—');
+    boardEl.innerHTML = '';
+    boardEl.appendChild(frag);
+    boardEl.classList.toggle('locked', !!state.over || aiThinking);
+  }
+
+  function updateStatus() {
+    if (state.over) {
+      const o = state.over;
+      statusEl.textContent = o.winner === 'draw'
+        ? 'Draw — ' + o.reason
+        : (o.winner === W ? 'White wins' : 'Black wins') + ' — ' + o.reason;
+      statusEl.dataset.state = 'over';
+      return;
+    }
+    const name = state.turn === W ? 'White' : 'Black';
+    statusEl.textContent = state.turn === aiColor()
+      ? name + ' (computer) is thinking…'
+      : name + ' to move';
+    statusEl.dataset.state = 'play';
+  }
+
+  /* ============================ FLOW ============================= */
+
+  function endGame(winner, reason) {
+    state.over = { winner, reason };
+    render();
+    updateStatus();
+  }
+
+  function doMove(mv) {
+    const piece = state.board[mv.from.r][mv.from.c];
+    if (!piece) return;
+    const color = piece.color;
+
+    state.board = applyMove(state.board, mv);
+    state.lastMove = mv;
+    state.turn = other(color);
+    selected = null;
+    legalTargets = [];
+
+    if (reachesBack(mv, color)) {
+      endGame(color, (color === W ? 'White' : 'Black') + ' broke through to the far rank.');
+      return;
     }
 
-    function setEngineStatus(state, text) {
-      $engineDot.removeClass('ready thinking');
-      if (state === 'ready') $engineDot.addClass('ready');
-      if (state === 'thinking') $engineDot.addClass('thinking');
-      $engineStatusText.text(text);
+    const opp = state.turn;
+    if (countPawns(state.board, opp) === 0) {
+      endGame(color, (opp === W ? 'White' : 'Black') + ' has no pawns left.');
+      return;
+    }
+    if (allMoves(state.board, opp).length === 0) {
+      endGame('draw', (opp === W ? 'White' : 'Black') + ' has no legal move.');
+      return;
     }
 
-    /* ============================================================
-       ANALYSIS REQUEST
-       ============================================================ */
-    function requestAnalysis() {
-      if (!engineReady) {
-        pendingAnalysis = true;
-        return;
-      }
-      if (isThinking) {
-        pendingAnalysis = true;
-        return;
-      }
+    render();
+    updateStatus();
+    maybeAI();
+  }
 
-      isThinking = true;
-      pendingAnalysis = false;
-      setEngineStatus('thinking', 'Analyzing…');
-      clearAnalysisDisplay();
+  function maybeAI() {
+    if (aiTimer) { clearTimeout(aiTimer); aiTimer = null; }
+    if (!state || state.over) return;
 
-      // Stop any previous search, set new position, and go
-      sendCommand('stop');
-      // Small delay to let the engine settle before sending new position
-      setTimeout(() => {
-        sendCommand('position fen ' + game.fen());
-        sendCommand('go depth ' + analysisDepth);
-      }, 30);
+    const ac = aiColor();
+    if (!ac || state.turn !== ac) return;
+
+    aiThinking = true;
+    render();
+    updateStatus();
+
+    aiTimer = setTimeout(() => {
+      aiTimer = null;
+      if (!state || state.over || state.turn !== ac) { aiThinking = false; return; }
+      const mv = bestMove(state.board, ac);
+      aiThinking = false;
+      if (mv) doMove(mv);
+      else { render(); updateStatus(); }
+    }, 220);
+  }
+
+  function handleClick(r, c) {
+    if (selected) {
+      const mv = legalTargets.find(m => m.to.r === r && m.to.c === c);
+      if (mv) { doMove(mv); return; }
     }
-
-    /* ============================================================
-       BOARD CONTROLS
-       ============================================================ */
-    function resetGame() {
-      game = new Chess();
-      board.position('start');
-      $moveList.html('No moves yet.');
-      clearAnalysisDisplay();
-      currentBestMove = null;
-      lastEval = null;
-      $evalBarFill.css('width', '50%');
-      $evalBarLabel.text('0.00');
-      $evalDisplay.text('0.00');
-      $fenInput.val('');
-      $pgnInput.val('');
-      // Optionally analyze the starting position
-      requestAnalysis();
+    const p = state.board[r][c];
+    if (p && p.color === state.turn) {
+      selected = { r, c };
+      legalTargets = movesFrom(state.board, r, c);
+      render();
+      return;
     }
+    if (selected) { selected = null; legalTargets = []; render(); }
+  }
 
-    function flipBoard() {
-      board.flip();
-    }
+  function newGame() {
+    if (aiTimer) { clearTimeout(aiTimer); aiTimer = null; }
+    state = { board: makeBoard(), turn: W, over: null, lastMove: null };
+    selected = null;
+    legalTargets = [];
+    aiThinking = false;
+    render();
+    updateStatus();
+    maybeAI();
+  }
 
-    function showHint() {
-      if (currentBestMove) {
-        // Highlight the best move on the board
-        const from = currentBestMove.substring(0, 2);
-        const to = currentBestMove.substring(2, 4);
-        $board.find('.square-' + from).addClass('highlight-hint');
-        $board.find('.square-' + to).addClass('highlight-hint');
-        setTimeout(() => {
-          $board.find('.square-' + from).removeClass('highlight-hint');
-          $board.find('.square-' + to).removeClass('highlight-hint');
-        }, 3000);
-      } else {
-        // If no best move yet, run analysis first
-        requestAnalysis();
-      }
-    }
+  /* =========================== BINDINGS ========================== */
 
-    /* ============================================================
-       FEN / PGN IMPORT & EXPORT
-       ============================================================ */
-    function loadFen() {
-      const fen = $fenInput.val().trim();
-      if (!fen) return;
-      const newGame = new Chess();
-      try {
-        newGame.load(fen);
-        game = newGame;
-        board.position(game.fen());
-        updateMoveHistory();
-        clearAnalysisDisplay();
-        requestAnalysis();
-      } catch (e) {
-        alert('Invalid FEN string.');
-      }
-    }
+  boardEl.addEventListener('click', e => {
+    const cell = e.target.closest('.cell');
+    if (!cell || !state || state.over || aiThinking) return;
+    if (state.turn === aiColor()) return;
+    handleClick(Number(cell.dataset.r), Number(cell.dataset.c));
+  });
 
-    function copyFen() {
-      const fen = game.fen();
-      navigator.clipboard.writeText(fen).then(() => {
-        $fenInput.val(fen);
-      });
-    }
+  newBtn.addEventListener('click', newGame);
+  modeEl.addEventListener('change', newGame);
 
-    function loadPgn() {
-      const pgn = $pgnInput.val().trim();
-      if (!pgn) return;
-      const newGame = new Chess();
-      try {
-        newGame.load_pgn(pgn);
-        game = newGame;
-        board.position(game.fen());
-        updateMoveHistory();
-        clearAnalysisDisplay();
-        requestAnalysis();
-      } catch (e) {
-        alert('Invalid PGN.');
-      }
-    }
-
-    function copyPgn() {
-      const pgn = game.pgn();
-      navigator.clipboard.writeText(pgn).then(() => {
-        $pgnInput.val(pgn);
-      });
-    }
-
-    /* ============================================================
-       EVENT BINDINGS
-       ============================================================ */
-    $(document).ready(function () {
-      initBoard();
-      initEngine();
-
-      // Board controls
-      $('#btnAnalyze').on('click', requestAnalysis);
-      $('#btnHint').on('click', showHint);
-      $('#btnFlip').on('click', flipBoard);
-      $('#btnReset').on('click', resetGame);
-
-      // Depth slider
-      $depthSlider.on('input', function () {
-        analysisDepth = parseInt($(this).val(), 10);
-        $depthValue.text(analysisDepth);
-      });
-
-      // FEN / PGN
-      $('#btnLoadFen').on('click', loadFen);
-      $('#btnCopyFen').on('click', copyFen);
-      $('#btnLoadPgn').on('click', loadPgn);
-      $('#btnCopyPgn').on('click', copyPgn);
-
-      // Add highlight style for hint
-      $('<style>')
-        .prop('type', 'text/css')
-        .html(`
-          .highlight-hint {
-            box-shadow: inset 0 0 3px 3px #4caf50 !important;
-            transition: box-shadow 0.2s;
-          }
-        `)
-        .appendTo('head');
-    });
-  </script>
-
+  newGame();
+})();
+</script>
 </body>
 </html>
