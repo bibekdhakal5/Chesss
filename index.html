@@ -1,481 +1,471 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Pawn Break — a chess variant</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Pawn Break — engine</title>
 <style>
-  :root {
-    --light: #efe3c8;
-    --dark:  #a8835a;
-    --bg1:   #1d2632;
-    --bg2:   #0e131a;
-    --ink:   #e8eef6;
-    --muted: #93a4b8;
-    --accent:#7dd3a8;
-  }
-  * { box-sizing: border-box; }
-  html, body { height: 100%; }
-  body {
-    margin: 0;
-    min-height: 100%;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 16px;
-    padding: 22px 14px 34px;
-    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    color: var(--ink);
-    background: radial-gradient(120% 90% at 50% 0%, var(--bg1), var(--bg2) 65%);
-  }
-  header { text-align: center; }
-  h1 { margin: 0; font-size: 24px; letter-spacing: .06em; text-transform: uppercase; }
-  .tagline { margin: 6px 0 0; font-size: 12.5px; color: var(--muted); max-width: 350px; line-height: 1.45; }
-
-  /* ---------- board ---------- */
-  .board {
-    --cell: min(10.8vw, 54px);
-    width: calc(var(--cell) * 8);
-    height: calc(var(--cell) * 8);
-    display: grid;
-    grid-template-columns: repeat(8, 1fr);
-    grid-template-rows: repeat(8, 1fr);
-    border-radius: 10px;
-    overflow: hidden;
-    box-shadow: 0 20px 44px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.07);
-    touch-action: manipulation;
-  }
-  .cell { position: relative; display: grid; place-items: center; cursor: pointer; }
-  .cell.light { background: var(--light); }
-  .cell.dark  { background: var(--dark); }
-  .board.locked .cell { cursor: default; }
-
-  .cell::before { content: ''; position: absolute; inset: 0; background: transparent; pointer-events: none; }
-  .cell.last-from::before,
-  .cell.last-to::before   { background: rgba(255, 206, 84, .30); }
-  .cell.selected::before  { background: rgba(125, 211, 168, .55); }
-
-  .cell.move-target::after,
-  .cell.capture-target::after {
-    content: ''; position: absolute; top: 50%; left: 50%;
-    transform: translate(-50%, -50%); border-radius: 50%; pointer-events: none;
-  }
-  .cell.move-target::after    { width: 26%; height: 26%; background: rgba(30,40,30,.38); }
-  .cell.capture-target::after { width: 82%; height: 82%;
-    border: calc(var(--cell) * .07) solid rgba(214,69,69,.85); }
-
-  .pawn {
-    position: relative; z-index: 1;
-    font-size: calc(var(--cell) * .74);
-    line-height: 1;
-    user-select: none; -webkit-user-select: none;
-  }
-  .pawn.white {
-    color: #fffdf6;
-    text-shadow: 0 0 1.5px #33291c, 1px 1px 0 #33291c, -1px 1px 0 #33291c,
-                 1px -1px 0 #33291c, -1px -1px 0 #33291c, 0 3px 6px rgba(0,0,0,.4);
-  }
-  .pawn.black { color: #15161a; text-shadow: 0 3px 6px rgba(0,0,0,.4); }
-
-  .coord { position: absolute; font-size: 9.5px; font-weight: 700; line-height: 1;
-           opacity: .5; pointer-events: none; z-index: 2; }
-  .coord-file { bottom: 3px; right: 4px; }
-  .coord-rank { top: 3px; left: 4px; }
-  .cell.light .coord { color: #6a5638; }
-  .cell.dark  .coord { color: #f6ecd8; }
-
-  /* ---------- ui ---------- */
-  .status {
-    min-height: 22px; font-size: 14px; font-weight: 600;
-    text-align: center; color: var(--accent);
-  }
-  .status[data-state="over"] { color: #ffd166; }
-
-  .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: center; }
-  select, button {
-    font: inherit; font-size: 13px; padding: 8px 12px; border-radius: 8px;
-    border: 1px solid rgba(255,255,255,.14);
-    background: rgba(255,255,255,.06); color: var(--ink); cursor: pointer;
-  }
-  select:hover, button:hover { background: rgba(255,255,255,.12); }
-  select option { background: #1a222c; }
-
-  details {
-    max-width: 460px; font-size: 13px; line-height: 1.55; color: #c3d0de;
-    background: rgba(255,255,255,.04);
-    border: 1px solid rgba(255,255,255,.08);
-    border-radius: 10px; padding: 10px 14px;
-  }
-  details summary { cursor: pointer; font-weight: 600; color: var(--ink); }
-  details ul { margin: 8px 0 0; padding-left: 18px; }
-  details li { margin: 3px 0; }
-  details strong { color: #fff; }
+  :root{--light:#efe3c8;--dark:#a8835a;--ink:#e8eef6;--muted:#93a4b8;--acc:#7dd3a8}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;display:flex;flex-direction:column;align-items:center;
+       gap:12px;padding:16px 10px 28px;font-family:system-ui,sans-serif;color:var(--ink);
+       background:radial-gradient(120% 90% at 50% 0%,#1d2632,#0e131a 65%)}
+  h1{margin:0;font-size:18px;letter-spacing:.08em;text-transform:uppercase}
+  .board{--cell:min(10.5vw,50px);width:calc(var(--cell)*8);height:calc(var(--cell)*8);
+         display:grid;grid-template-columns:repeat(8,1fr);grid-template-rows:repeat(8,1fr);
+         border-radius:8px;overflow:hidden;box-shadow:0 16px 40px rgba(0,0,0,.55),
+         0 0 0 1px rgba(255,255,255,.07)}
+  .cell{position:relative;display:grid;place-items:center;cursor:pointer}
+  .cell.light{background:var(--light)}.cell.dark{background:var(--dark)}
+  .cell::before{content:'';position:absolute;inset:0;background:transparent;pointer-events:none}
+  .cell.last-to::before{background:rgba(255,206,84,.32)}
+  .cell.selected::before{background:rgba(125,211,168,.5)}
+  .cell.mt::after,.cell.ct::after{content:'';position:absolute;top:50%;left:50%;
+    transform:translate(-50%,-50%);border-radius:50%;pointer-events:none}
+  .cell.mt::after{width:26%;height:26%;background:rgba(20,30,20,.4)}
+  .cell.ct::after{width:82%;height:82%;border:calc(var(--cell)*.07) solid rgba(214,69,69,.85)}
+  .pawn{position:relative;z-index:1;font-size:calc(var(--cell)*.74);line-height:1;
+        user-select:none;-webkit-user-select:none}
+  .pawn.w{color:#fffdf6;text-shadow:0 0 1px #33291c,1px 1px 0 #33291c,-1px 1px 0 #33291c,
+          1px -1px 0 #33291c,-1px -1px 0 #33291c,0 2px 4px rgba(0,0,0,.35)}
+  .pawn.b{color:#15161a;text-shadow:0 2px 4px rgba(0,0,0,.35)}
+  .coord{position:absolute;font-size:9px;font-weight:700;opacity:.5;pointer-events:none;z-index:2}
+  .cf{bottom:2px;right:3px}.cr{top:2px;left:3px}
+  .cell.light .coord{color:#6a5638}.cell.dark .coord{color:#f6ecd8}
+  .status{min-height:20px;font-size:13.5px;font-weight:600;text-align:center;color:var(--acc)}
+  .status[data-state=over]{color:#ffd166}
+  .controls{display:flex;gap:6px;flex-wrap:wrap;justify-content:center}
+  select,button{font:inherit;font-size:12.5px;padding:8px 11px;border-radius:7px;
+    border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.06);
+    color:var(--ink);cursor:pointer}
+  select option{background:#1a222c}
+  .info{font-size:11.5px;color:var(--muted);text-align:center;min-height:14px}
 </style>
 </head>
 <body>
-
-<header>
-  <h1>Pawn Break</h1>
-  <p class="tagline">Your back rank is the gate. Open theirs before they open yours.</p>
-</header>
-
-<div id="board" class="board" aria-label="Pawn Break board"></div>
+<h1>Pawn Break</h1>
+<div id="board" class="board"></div>
 <div id="status" class="status"></div>
-
 <div class="controls">
   <select id="mode">
-    <option value="two">Two players</option>
-    <option value="white">You: White vs computer</option>
-    <option value="black">You: Black vs computer</option>
+    <option value="two">2 players</option>
+    <option value="white">You: White</option>
+    <option value="black">You: Black</option>
   </select>
-  <button id="newGame">New game</button>
+  <button id="ng">New game</button>
 </div>
-
-<details>
-  <summary>Rules</summary>
-  <ul>
-    <li>8×8 board. White pawns start on rank 1, Black pawns on rank 8. White moves first.</li>
-    <li>Pawns move like chess pawns: one square forward, or <strong>two squares from their starting rank</strong> if both squares are empty. They capture one square diagonally forward.</li>
-    <li>No promotion, no en passant, no kings.</li>
-    <li><strong>Win:</strong> move any pawn onto the opponent's back rank, or leave the opponent with no pawns.</li>
-    <li><strong>Draw:</strong> a player who still has pawns but has no legal move.</li>
-  </ul>
-</details>
+<div class="info" id="info"></div>
 
 <script>
-(function () {
-  'use strict';
+'use strict';
+/* ============================================================
+   ENGINE — single-file pawn-break search
+   Board: Uint8Array(64), idx = r*8+c, r=0 is rank 1, r=7 is rank 8
+   White pawns start at r=0, move +1; Black pawns start at r=7, move -1
+   ============================================================ */
+const EMPTY=0, WHITE=1, BLACK=2, MATE=30000;
 
-  const N = 8;
-  const W = 'w', B = 'b';
-  const WIN_SCORE = 100000;
+// ---- Zobrist ----
+const ZW=new Int32Array(64), ZB=new Int32Array(64);
+for(let i=0;i<64;i++){ZW[i]=(Math.random()*4294967296)|0;ZB[i]=(Math.random()*4294967296)|0;}
 
-  const boardEl  = document.getElementById('board');
-  const statusEl = document.getElementById('status');
-  const modeEl   = document.getElementById('mode');
-  const newBtn   = document.getElementById('newGame');
+// ---- TT ----
+const TT_BITS=18, TT_SIZE=1<<TT_BITS, TT_MASK=TT_SIZE-1;
+const TT_KEY=new Int32Array(TT_SIZE);
+const TT_MOVE=new Int32Array(TT_SIZE);
+const TT_SCORE=new Int32Array(TT_SIZE);
+const TT_DEPTH=new Int8Array(TT_SIZE);
+const TT_FLAG=new Int8Array(TT_SIZE);
 
-  let state = null;
-  let selected = null;
-  let legalTargets = [];
-  let aiThinking = false;
-  let aiTimer = null;
+// ---- Killers / history ----
+const MAX_PLY=64;
+const KILLERS=new Int32Array(MAX_PLY*2);
+const HISTORY=new Int32Array(4096);
 
-  /* ============================ MODEL ============================ */
+// ---- Move: from(6)|to(6) ----
+const mkMove=(f,t)=>f|(t<<6);
+const mFrom=m=>m&63, mTo=m=>m>>6;
 
-  const other = c => (c === W ? B : W);
-
-  function makeBoard() {
-    const b = Array.from({ length: N }, () => Array(N).fill(null));
-    for (let c = 0; c < N; c++) {
-      b[0][c]     = { color: B };   // rank 8 = Black home
-      b[N - 1][c] = { color: W };   // rank 1 = White home
-    }
-    return b;
-  }
-
-  function movesFrom(board, r, c) {
-    const p = board[r][c];
-    if (!p) return [];
-    const dir     = p.color === W ? -1 : 1;
-    const homeRow = p.color === W ? N - 1 : 0;
-    const moves   = [];
-    const r1      = r + dir;
-
-    if (r1 >= 0 && r1 < N) {
-      if (!board[r1][c]) {
-        moves.push({ from: { r, c }, to: { r: r1, c }, capture: false });
-        const r2 = r + 2 * dir;
-        if (r === homeRow && r2 >= 0 && r2 < N && !board[r2][c]) {
-          moves.push({ from: { r, c }, to: { r: r2, c }, capture: false });
-        }
-      }
-      for (const dc of [-1, 1]) {
-        const nc = c + dc;
-        if (nc < 0 || nc >= N) continue;
-        const t = board[r1][nc];
-        if (t && t.color !== p.color) {
-          moves.push({ from: { r, c }, to: { r: r1, c: nc }, capture: true });
+// ---- Move gen ----
+function genMoves(pos, side){
+  const moves=[];
+  const home = side===WHITE?0:7;
+  const opp = side===WHITE?BLACK:WHITE;
+  const rDir = side===WHITE?1:-1;
+  for(let i=0;i<64;i++){
+    if(pos[i]!==side) continue;
+    const r=i>>3, c=i&7;
+    const r1=r+rDir;
+    if(r1<0||r1>7) continue;
+    const fwd=(r1<<3)|c;
+    if(pos[fwd]===EMPTY){
+      moves.push(mkMove(i,fwd));
+      if(r===home){
+        const r2=r+2*rDir;
+        if(r2>=0&&r2<=7){
+          const f2=(r2<<3)|c;
+          if(pos[f2]===EMPTY) moves.push(mkMove(i,f2));
         }
       }
     }
-    return moves;
+    for(let dc=-1;dc<=1;dc+=2){
+      const nc=c+dc;
+      if(nc<0||nc>7) continue;
+      const cap=(r1<<3)|nc;
+      if(pos[cap]===opp) moves.push(mkMove(i,cap));
+    }
+  }
+  return moves;
+}
+
+// ---- Do / undo ----
+function doMove(pos, m, stack){
+  const from=m&63, to=m>>6;
+  stack.push(pos[to]);
+  pos[to]=pos[from];
+  pos[from]=EMPTY;
+}
+function undoMove(pos, m, stack){
+  const from=m&63, to=m>>6;
+  pos[from]=pos[to];
+  pos[to]=stack.pop();
+}
+
+// ---- Hash ----
+function initHash(pos, side){
+  let h=side===BLACK?0x5a5a5a5a:0;
+  for(let i=0;i<64;i++){
+    if(pos[i]===WHITE) h^=ZW[i];
+    else if(pos[i]===BLACK) h^=ZB[i];
+  }
+  return h|0;
+}
+function hashDelta(pos, m){
+  const from=m&63, to=m>>6;
+  const p=pos[from], cap=pos[to];
+  let d=(p===WHITE?ZW[from]:ZB[from]) ^ (p===WHITE?ZW[to]:ZB[to]);
+  if(cap!==EMPTY) d^=(cap===WHITE?ZW[to]:ZB[to]);
+  return d;
+}
+
+// ---- Helpers ----
+function reachesBack(m, side){
+  const to=m>>6;
+  return side===WHITE? to>=56 : to<8;
+}
+function hasAnyPawn(pos, side){
+  for(let i=0;i<64;i++) if(pos[i]===side) return true;
+  return false;
+}
+
+// ---- Eval ----
+function evaluate(pos){
+  let s=0;
+  for(let i=0;i<64;i++){
+    const p=pos[i];
+    if(p===EMPTY) continue;
+    const r=i>>3;
+    const adv = p===WHITE? r : 7-r;
+    const v = 100 + adv*25 + adv*adv*10;
+    s += p===WHITE? v : -v;
+  }
+  return s;
+}
+
+// ---- Move ordering ----
+function orderMoves(moves, pos, side, ply, ttMove){
+  const scored=new Array(moves.length);
+  for(let i=0;i<moves.length;i++){
+    const m=moves[i];
+    let s=0;
+    if(m===ttMove) s+=1000000;
+    if(pos[m>>6]!==EMPTY) s+=100000;
+    if(reachesBack(m, side)) s+=500000;
+    if(ply<MAX_PLY){
+      if(m===KILLERS[ply*2]) s+=30000;
+      else if(m===KILLERS[ply*2+1]) s+=20000;
+    }
+    s+=HISTORY[m]|0;
+    scored[i]=[s,m];
+  }
+  scored.sort((a,b)=>b[0]-a[0]);
+  const out=new Array(moves.length);
+  for(let i=0;i<scored.length;i++) out[i]=scored[i][1];
+  return out;
+}
+
+// ---- Search ----
+let NODES=0, DEADLINE=0;
+const TIMEOUT={};
+
+function search(pos, hash, depth, alpha, beta, side, ply){
+  if((++NODES&1023)===0 && Date.now()>DEADLINE) throw TIMEOUT;
+
+  const rawMoves=genMoves(pos, side);
+  if(rawMoves.length===0){
+    return hasAnyPawn(pos, side) ? 0 : -MATE+ply;
+  }
+  for(let i=0;i<rawMoves.length;i++){
+    if(reachesBack(rawMoves[i], side)) return MATE-ply;
+  }
+  if(depth<=0){
+    return side===WHITE? evaluate(pos) : -evaluate(pos);
   }
 
-  function allMoves(board, color) {
-    const out = [];
-    for (let r = 0; r < N; r++)
-      for (let c = 0; c < N; c++) {
-        const p = board[r][c];
-        if (p && p.color === color) out.push(...movesFrom(board, r, c));
+  // TT probe
+  const tti=hash & TT_MASK;
+  let ttMove=0;
+  if(TT_KEY[tti]===hash){
+    ttMove=TT_MOVE[tti];
+    if(TT_DEPTH[tti]>=depth){
+      const f=TT_FLAG[tti], s=TT_SCORE[tti];
+      if(f===1) return s;
+      if(f===2 && s>=beta) return s;
+      if(f===3 && s<=alpha) return s;
+    }
+  }
+
+  const moves=orderMoves(rawMoves, pos, side, ply, ttMove);
+  const stack=[];
+  let best=-MATE-1, bestMove=0, moveIdx=0;
+  const origAlpha=alpha;
+
+  for(let mi=0; mi<moves.length; mi++){
+    const m=moves[mi];
+    const d=hashDelta(pos, m);
+    doMove(pos, m, stack);
+    let score;
+    if(mi===0){
+      score=-search(pos, hash^d, depth-1, -beta, -alpha, 3-side, ply+1);
+    } else {
+      let red=0;
+      if(depth>=3 && mi>=4 && pos[m>>6]===EMPTY) red=1;
+      score=-search(pos, hash^d, depth-1-red, -alpha-1, -alpha, 3-side, ply+1);
+      if(score>alpha && red>0){
+        score=-search(pos, hash^d, depth-1, -alpha-1, -alpha, 3-side, ply+1);
       }
-    return out;
-  }
-
-  function applyMove(board, mv) {
-    const nb = board.map(row => row.slice());
-    nb[mv.to.r][mv.to.c] = nb[mv.from.r][mv.from.c];
-    nb[mv.from.r][mv.from.c] = null;
-    return nb;
-  }
-
-  function countPawns(board, color) {
-    let n = 0;
-    for (let r = 0; r < N; r++)
-      for (let c = 0; c < N; c++) {
-        const p = board[r][c];
-        if (p && p.color === color) n++;
-      }
-    return n;
-  }
-
-  const reachesBack = (mv, color) =>
-    (color === W && mv.to.r === 0) || (color === B && mv.to.r === N - 1);
-
-  /* ============================= AI ============================== */
-
-  function evalBoard(board) {
-    let score = 0;
-    for (let r = 0; r < N; r++)
-      for (let c = 0; c < N; c++) {
-        const p = board[r][c];
-        if (!p) continue;
-        const adv = p.color === W ? (N - 1 - r) : r;     // 0..7
-        const v = 100 + adv * 10 + adv * adv * 6;
-        score += p.color === W ? v : -v;
-      }
-    return score;
-  }
-
-  function orderMoves(moves, color) {
-    const rank = mv => (mv.capture ? 50 : 0) +
-      (color === W ? (N - 1 - mv.to.r) : mv.to.r) * 3;
-    return moves.slice().sort((a, b) => rank(b) - rank(a));
-  }
-
-  function search(board, depth, alpha, beta, turn) {
-    if (countPawns(board, turn) === 0) return turn === W ? -WIN_SCORE : WIN_SCORE;
-
-    const moves = allMoves(board, turn);
-    if (moves.length === 0) return 0;                    // draw
-
-    for (const mv of moves) {
-      if (reachesBack(mv, turn)) {
-        const s = WIN_SCORE - (10 - depth);
-        return turn === W ? s : -s;
+      if(score>alpha && score<beta){
+        score=-search(pos, hash^d, depth-1, -beta, -alpha, 3-side, ply+1);
       }
     }
-    if (depth <= 0) return evalBoard(board);
+    undoMove(pos, m, stack);
 
-    const maxing = turn === W;
-    let best = maxing ? -Infinity : Infinity;
-
-    for (const mv of orderMoves(moves, turn)) {
-      const s = search(applyMove(board, mv), depth - 1, alpha, beta, other(turn));
-      if (maxing) { if (s > best) best = s; if (best > alpha) alpha = best; }
-      else        { if (s < best) best = s; if (best < beta)  beta  = best; }
-      if (beta <= alpha) break;
-    }
-    return best;
-  }
-
-  function bestMove(board, color) {
-    const moves = allMoves(board, color);
-    if (moves.length === 0) return null;
-
-    const ordered = orderMoves(moves, color);
-    let best = ordered[0];
-    let bestScore = color === W ? -Infinity : Infinity;
-
-    for (const mv of ordered) {
-      if (reachesBack(mv, color)) return mv;
-      const nb = applyMove(board, mv);
-      if (countPawns(nb, other(color)) === 0) return mv;
-
-      const s = search(nb, 2, -Infinity, Infinity, other(color));
-      if (color === W ? s > bestScore : s < bestScore) { bestScore = s; best = mv; }
-    }
-    return best;
-  }
-
-  const aiColor = () => (modeEl.value === 'white' ? B : modeEl.value === 'black' ? W : null);
-
-  /* ============================ RENDER =========================== */
-
-  function render() {
-    const flip = modeEl.value === 'black';
-    const frag = document.createDocumentFragment();
-
-    const targets = new Map();
-    for (const m of legalTargets) targets.set(m.to.r * N + m.to.c, m);
-
-    for (let dr = 0; dr < N; dr++) {
-      for (let dc = 0; dc < N; dc++) {
-        const r = flip ? N - 1 - dr : dr;
-        const c = flip ? N - 1 - dc : dc;
-
-        const cell = document.createElement('div');
-        cell.className = 'cell ' + ((r + c) % 2 === 0 ? 'light' : 'dark');
-        cell.dataset.r = r;
-        cell.dataset.c = c;
-
-        if (selected && selected.r === r && selected.c === c) cell.classList.add('selected');
-
-        const lm = state.lastMove;
-        if (lm) {
-          if (lm.from.r === r && lm.from.c === c) cell.classList.add('last-from');
-          if (lm.to.r === r   && lm.to.c === c)   cell.classList.add('last-to');
+    if(score>best){ best=score; bestMove=m; }
+    if(score>alpha){
+      alpha=score;
+      if(alpha>=beta){
+        if(ply<MAX_PLY && pos[m>>6]===EMPTY){
+          if(KILLERS[ply*2]!==m){
+            KILLERS[ply*2+1]=KILLERS[ply*2];
+            KILLERS[ply*2]=m;
+          }
+          HISTORY[m]+=depth*depth;
         }
-
-        const t = targets.get(r * N + c);
-        if (t) cell.classList.add(t.capture ? 'capture-target' : 'move-target');
-
-        if (dr === N - 1) {
-          const s = document.createElement('span');
-          s.className = 'coord coord-file';
-          s.textContent = 'abcdefgh'[c];
-          cell.appendChild(s);
-        }
-        if (dc === 0) {
-          const s = document.createElement('span');
-          s.className = 'coord coord-rank';
-          s.textContent = String(N - r);
-          cell.appendChild(s);
-        }
-
-        const p = state.board[r][c];
-        if (p) {
-          const el = document.createElement('div');
-          el.className = 'pawn ' + (p.color === W ? 'white' : 'black');
-          el.textContent = '♟';
-          cell.appendChild(el);
-        }
-
-        frag.appendChild(cell);
+        break;
       }
     }
-
-    boardEl.innerHTML = '';
-    boardEl.appendChild(frag);
-    boardEl.classList.toggle('locked', !!state.over || aiThinking);
   }
 
-  function updateStatus() {
-    if (state.over) {
-      const o = state.over;
-      statusEl.textContent = o.winner === 'draw'
-        ? 'Draw — ' + o.reason
-        : (o.winner === W ? 'White wins' : 'Black wins') + ' — ' + o.reason;
-      statusEl.dataset.state = 'over';
-      return;
+  // TT store
+  const flag = best<=origAlpha?3 : best>=beta?2 : 1;
+  TT_KEY[tti]=hash;
+  TT_MOVE[tti]=bestMove;
+  TT_SCORE[tti]=best;
+  TT_DEPTH[tti]=depth;
+  TT_FLAG[tti]=flag;
+
+  return best;
+}
+
+function searchRoot(pos, hash, side, depth){
+  let bestMove=0, bestScore=-MATE;
+  const rawMoves=genMoves(pos, side);
+  for(let i=0;i<rawMoves.length;i++){
+    if(reachesBack(rawMoves[i], side)) return {move:rawMoves[i], score:MATE};
+  }
+  const moves=orderMoves(rawMoves, pos, side, 0, 0);
+  const stack=[];
+  let alpha=-MATE, beta=MATE;
+  for(let mi=0; mi<moves.length; mi++){
+    const m=moves[mi];
+    const d=hashDelta(pos, m);
+    doMove(pos, m, stack);
+    const score=-search(pos, hash^d, depth-1, -beta, -alpha, 3-side, 1);
+    undoMove(pos, m, stack);
+    if(score>bestScore){ bestScore=score; bestMove=m; }
+    if(score>alpha) alpha=score;
+    if(Date.now()>DEADLINE) return {move:bestMove, score:bestScore};
+  }
+  return {move:bestMove, score:bestScore};
+}
+
+function think(pos, side, maxDepth, timeMs){
+  NODES=0;
+  const hash=initHash(pos, side);
+  DEADLINE=Date.now()+timeMs;
+
+  const rm=genMoves(pos, side);
+  if(rm.length===0) return {move:0, depth:0, score:0, nodes:0};
+  if(rm.length===1) return {move:rm[0], depth:0, score:0, nodes:0};
+  for(let i=0;i<rm.length;i++) if(reachesBack(rm[i], side))
+    return {move:rm[i], depth:0, score:MATE, nodes:0};
+
+  let bestMove=rm[0], bestScore=0, reachedDepth=0;
+  for(let d=1; d<=maxDepth; d++){
+    const t0=Date.now();
+    try{
+      const r=searchRoot(pos, hash, side, d);
+      bestMove=r.move; bestScore=r.score; reachedDepth=d;
+      if(Math.abs(bestScore)>MATE-200) break;
+      const elapsed=Date.now()-t0;
+      if(Date.now()+elapsed*1.6>DEADLINE) break;
+    }catch(e){
+      if(e!==TIMEOUT) throw e;
+      break;
     }
-    const name = state.turn === W ? 'White' : 'Black';
-    statusEl.textContent = state.turn === aiColor()
-      ? name + ' (computer) is thinking…'
-      : name + ' to move';
-    statusEl.dataset.state = 'play';
   }
+  return {move:bestMove, depth:reachedDepth, score:bestScore, nodes:NODES};
+}
 
-  /* ============================ FLOW ============================= */
+/* ============================================================
+   UI
+   ============================================================ */
+const boardEl=document.getElementById('board');
+const statusEl=document.getElementById('status');
+const infoEl=document.getElementById('info');
+const modeEl=document.getElementById('mode');
+const ngBtn=document.getElementById('ng');
 
-  function endGame(winner, reason) {
-    state.over = { winner, reason };
+const FILES='abcdefgh';
+const UCI_IDX=(r,c)=>r*8+c;
+
+let pos, turn, over, lastMove, selected, targets, aiThinking, aiTimer;
+
+function newPos(){
+  const p=new Uint8Array(64);
+  for(let c=0;c<8;c++){ p[UCI_IDX(0,c)]=WHITE; p[UCI_IDX(7,c)]=BLACK; }
+  return p;
+}
+const aiColor=()=> modeEl.value==='white'?BLACK: modeEl.value==='black'?WHITE: 0;
+
+function newGame(){
+  if(aiTimer){ clearTimeout(aiTimer); aiTimer=null; }
+  pos=newPos(); turn=WHITE; over=null; lastMove=null;
+  selected=null; targets=[]; aiThinking=false;
+  render(); setStatus(); maybeAI();
+}
+
+function render(){
+  const flip=modeEl.value==='black';
+  const frag=document.createDocumentFragment();
+  const tset=new Set(targets.map(m=>mTo(m)));
+  for(let dr=0;dr<8;dr++){
+    for(let dc=0;dc<8;dc++){
+      const r=flip?7-dr:dr, c=flip?7-dc:dc;
+      const idx=UCI_IDX(r,c);
+      const cell=document.createElement('div');
+      cell.className='cell '+((r+c)%2===0?'light':'dark');
+      cell.dataset.i=idx;
+      if(selected===idx) cell.classList.add('selected');
+      if(lastMove && mTo(lastMove)===idx) cell.classList.add('last-to');
+      if(tset.has(idx)){
+        const m=targets.find(x=>mTo(x)===idx);
+        cell.classList.add(pos[idx]!==EMPTY?'ct':'mt');
+      }
+      if(dr===7){ const s=document.createElement('span'); s.className='coord cf';
+        s.textContent=FILES[c]; cell.appendChild(s); }
+      if(dc===0){ const s=document.createElement('span'); s.className='coord cr';
+        s.textContent=String(r+1); cell.appendChild(s); }
+      const p=pos[idx];
+      if(p){
+        const el=document.createElement('div');
+        el.className='pawn '+(p===WHITE?'w':'b');
+        el.textContent='♟'; cell.appendChild(el);
+      }
+      frag.appendChild(cell);
+    }
+  }
+  boardEl.innerHTML=''; boardEl.appendChild(frag);
+}
+
+function setStatus(){
+  if(over){
+    statusEl.textContent = over.winner==='draw'
+      ? 'Draw — '+over.reason
+      : (over.winner===WHITE?'White':'Black')+' wins — '+over.reason;
+    statusEl.dataset.state='over';
+    return;
+  }
+  const name = turn===WHITE?'White':'Black';
+  const isAI = aiColor()===turn;
+  statusEl.textContent = isAI ? name+' (engine) thinking…' : name+' to move';
+  statusEl.dataset.state='play';
+}
+
+function endGame(w, reason){
+  over={winner:w, reason};
+  render(); setStatus();
+}
+
+function applyMove(m){
+  const from=mFrom(m), to=mTo(m);
+  const mover=pos[from];
+  pos[to]=pos[from]; pos[from]=EMPTY;
+  lastMove=m;
+  selected=null; targets=[];
+
+  if(reachesBack(m, mover)){
+    endGame(mover, (mover===WHITE?'White':'Black')+' broke through to the far rank.');
+    return;
+  }
+  const opp=3-mover;
+  if(!hasAnyPawn(pos, opp)){ endGame(mover, (opp===WHITE?'White':'Black')+' has no pawns.'); return; }
+
+  turn=opp;
+  const legal=genMoves(pos, turn);
+  if(legal.length===0){ endGame('draw', (turn===WHITE?'White':'Black')+' has no legal move.'); return; }
+
+  render(); setStatus(); maybeAI();
+}
+
+function maybeAI(){
+  if(aiTimer){ clearTimeout(aiTimer); aiTimer=null; }
+  if(!over && aiColor()===turn){
+    aiThinking=true; setStatus();
+    aiTimer=setTimeout(()=>{
+      aiTimer=null;
+      const r=think(pos, turn, 20, 3000);
+      aiThinking=false;
+      infoEl.textContent = r.depth? `depth ${r.depth} · ${r.nodes.toLocaleString()} nodes` : '';
+      if(r.move) applyMove(r.move);
+      else { render(); setStatus(); }
+    }, 30);
+  }
+}
+
+function clickCell(idx){
+  if(over||aiThinking) return;
+  if(aiColor()===turn) return;
+  if(selected!==null){
+    const m=targets.find(x=>mTo(x)===idx);
+    if(m){ applyMove(m); return; }
+  }
+  if(pos[idx]===turn){
+    selected=idx;
+    targets=genMoves(pos, turn).filter(x=>mFrom(x)===idx);
     render();
-    updateStatus();
+  } else if(selected!==null){
+    selected=null; targets=[]; render();
   }
+}
 
-  function doMove(mv) {
-    const piece = state.board[mv.from.r][mv.from.c];
-    if (!piece) return;
-    const color = piece.color;
-
-    state.board = applyMove(state.board, mv);
-    state.lastMove = mv;
-    state.turn = other(color);
-    selected = null;
-    legalTargets = [];
-
-    if (reachesBack(mv, color)) {
-      endGame(color, (color === W ? 'White' : 'Black') + ' broke through to the far rank.');
-      return;
-    }
-
-    const opp = state.turn;
-    if (countPawns(state.board, opp) === 0) {
-      endGame(color, (opp === W ? 'White' : 'Black') + ' has no pawns left.');
-      return;
-    }
-    if (allMoves(state.board, opp).length === 0) {
-      endGame('draw', (opp === W ? 'White' : 'Black') + ' has no legal move.');
-      return;
-    }
-
-    render();
-    updateStatus();
-    maybeAI();
-  }
-
-  function maybeAI() {
-    if (aiTimer) { clearTimeout(aiTimer); aiTimer = null; }
-    if (!state || state.over) return;
-
-    const ac = aiColor();
-    if (!ac || state.turn !== ac) return;
-
-    aiThinking = true;
-    render();
-    updateStatus();
-
-    aiTimer = setTimeout(() => {
-      aiTimer = null;
-      if (!state || state.over || state.turn !== ac) { aiThinking = false; return; }
-      const mv = bestMove(state.board, ac);
-      aiThinking = false;
-      if (mv) doMove(mv);
-      else { render(); updateStatus(); }
-    }, 220);
-  }
-
-  function handleClick(r, c) {
-    if (selected) {
-      const mv = legalTargets.find(m => m.to.r === r && m.to.c === c);
-      if (mv) { doMove(mv); return; }
-    }
-    const p = state.board[r][c];
-    if (p && p.color === state.turn) {
-      selected = { r, c };
-      legalTargets = movesFrom(state.board, r, c);
-      render();
-      return;
-    }
-    if (selected) { selected = null; legalTargets = []; render(); }
-  }
-
-  function newGame() {
-    if (aiTimer) { clearTimeout(aiTimer); aiTimer = null; }
-    state = { board: makeBoard(), turn: W, over: null, lastMove: null };
-    selected = null;
-    legalTargets = [];
-    aiThinking = false;
-    render();
-    updateStatus();
-    maybeAI();
-  }
-
-  /* =========================== BINDINGS ========================== */
-
-  boardEl.addEventListener('click', e => {
-    const cell = e.target.closest('.cell');
-    if (!cell || !state || state.over || aiThinking) return;
-    if (state.turn === aiColor()) return;
-    handleClick(Number(cell.dataset.r), Number(cell.dataset.c));
-  });
-
-  newBtn.addEventListener('click', newGame);
-  modeEl.addEventListener('change', newGame);
-
-  newGame();
-})();
+boardEl.addEventListener('click', e=>{
+  const cell=e.target.closest('.cell');
+  if(cell) clickCell(+cell.dataset.i);
+});
+ngBtn.addEventListener('click', newGame);
+modeEl.addEventListener('change', newGame);
+newGame();
 </script>
 </body>
 </html>
